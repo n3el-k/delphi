@@ -16,7 +16,7 @@ The shared source of truth for scope, architecture and who's doing what. The pro
 There are no levels in the MVP. One fixed AI rule applies to everyone: the AI turns your idea into tickets, reviews and tutors, and never writes your code.
 
 1. [ ] **Live GitHub loop:** PR on a ticket → webhook → AI posts a Socratic review with at least one security or correctness finding → learner answers comprehension questions in our app → pass → PR approved, skill profile updates.
-2. [ ] **Project idea → tickets:** the learner types a project idea and links their repo. Claude turns the idea into 3–5 tickets with the why and acceptance criteria (never the how), spread across the stack.
+2. [ ] **Project idea → tickets:** the learner types a project idea and links their repo. Claude turns the idea into 3–5 tickets with the why and acceptance criteria (never the how), spread across the stack. The learner sees Claude's summary of how it understood their idea alongside the tickets. The idea is one free-text box (no intake form), and its placeholder guides the learner: "Who's it for, and what should they be able to do? e.g. A shift board where food bank volunteers sign up for shifts and coordinators post them."
 3. [ ] **Learner dashboard:** skill map across the stack, the current project, and its tickets with their status.
 4. [ ] **Experience report / portfolio page.**
 5. [ ] **Transparency:** every AI grade shows why, and any review can be flagged. This is a non-negotiable and part of the Accessibility sidepot story.
@@ -75,7 +75,7 @@ Learner ──► project idea ──► Claude: tickets ──► DB
 
 Each call returns a Pydantic model, so the API, the DB and the frontend all share one shape.
 
-1. **Tickets** (project idea) → 3–5 tickets: title, why, acceptance criteria, skill areas. Never the how.
+1. **Tickets** (project idea) → a project title, a one-paragraph summary of the idea (who it's for and the core features Claude inferred), and 3–5 tickets: title, why, acceptance criteria, skill areas. Never the how.
 2. **Review** (diff, ticket, AI rule) → summary, findings (kind: security or correctness, vulnerability class, file, line, a Socratic question, a hint ladder of concept → where to look → small snippet), policy flags.
 3. **Questions** (diff) → 2–3 questions about the learner's own lines.
 4. **Grade** (question, diff, answer) → score 0–100, passed, explanation of the grade, next hint if failed.
@@ -130,12 +130,13 @@ GET /api/me
 
 POST /api/projects
 ← { idea, repo_full_name }                   idea: 1–1000 chars, repo: "owner/name"
-→ { id, title, tickets: [{ id, title, why, acceptance_criteria: [str] }] }
+→ { id, title, description, tickets: [{ id, title, why, acceptance_criteria: [str] }] }
+                                             description: Claude's one-paragraph summary of the idea (who it's for, core features)
                                              calls Neel's reviewer.generate_tickets(idea)
 
 GET /api/dashboard
 → { skills: [{ area, score }],
-    current_project: { id, title } | null,
+    current_project: { id, title, description } | null,
     tickets: [{ id, title, why, acceptance_criteria: [str],
                 status: "todo" | "in_review" | "done" }],
     open_gate_id: int | null }
@@ -185,6 +186,7 @@ Projects and tickets (from the learner's idea, or the seeded demo calculator):
 
 ```
 Project       id, learner_id → Learner, idea, title, description, repo_full_name
+              (description holds Claude's summary of the idea, shown on the dashboard)
 Ticket        id, project_id → Project, position, title, why,
               acceptance_criteria (JSON list), skill_areas (JSON list),
               label (core | delegable | null)
@@ -318,6 +320,7 @@ Record decisions here so neither of us re-argues them at 3am.
 | No levels in the MVP. The learner gives a project idea, Claude makes the tickets, and one fixed rule applies: the AI never writes your code. Levels come back if there's time | Promotion can't be shown in a demo, and the GitHub loop is what has to work. The ladder stays in the pitch as the vision | 2026-11-07 |
 | _Proposed:_ Answer scores are 0–100. A gate passes when every question's latest score is ≥ 70 | One rule for passing, with skill points only on a real pass | 2026-11-07 |
 | _Proposed:_ A PR names its ticket with `Ticket: #<id>` in the description, falling back to the first ticket not done | `Submission.ticket_id` is required, and the webhook needs to know which ticket the PR is for | 2026-11-07 |
+| _Proposed:_ Project idea is one free-text box, no intake form. Claude returns a summary of how it understood the idea plus the tickets, and the dashboard shows the summary | Least friction for the learner and the smallest contract change. Showing the summary makes the AI's reading of the idea transparent and easy to correct | 2026-11-07 |
 
 ## Open questions
 
