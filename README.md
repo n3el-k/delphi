@@ -29,4 +29,5 @@ cd hackthechange2026
 
 ## How we work
 
-See [CONTRIBUTING.md](CONTRIBUTING.md).
+- Planning lives in [plans/](plans/). Start with [plans/project-plan.md](plans/project-plan.md).
+- The git workflow is in [CONTRIBUTING.md](CONTRIBUTING.md).

@@ -4,7 +4,8 @@ There are two of us and not much time, so the rules are short.
 
 ## Branches
 
-- `main` should always run. Don't commit to it directly.
+- `main` should always run. Don't commit code to it directly.
+- The one exception is `plans/`. Plan updates can go straight to `main` after a `git pull`. See [plans/README.md](plans/README.md).
 - Make a branch for each piece of work: `feat/<thing>`, `fix/<thing>`, or `chore/<thing>`.
 - Keep branches short-lived. Merge often so we don't drift apart.
 
