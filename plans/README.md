@@ -1,0 +1,20 @@
+# Plans
+
+| File | What it's for | Who edits it |
+| ---- | ------------- | ------------ |
+| [project-plan.md](project-plan.md) | The idea, scope, architecture, who's doing what, timeline, decisions | Both |
+| [neel.md](neel.md) | Neel's working notes and to-dos | Neel |
+| [param.md](param.md) | Param's working notes and to-dos | Param |
+
+## How to use them
+
+1. Agree on the idea and scope together and write it in `project-plan.md`.
+2. Split the work in the **Who's doing what** table.
+3. Each person breaks their tasks down in their own file and works from there.
+4. When something gets decided or a task changes status, update `project-plan.md`.
+
+## Editing
+
+You can commit plan changes straight to `main` without a PR. Always `git pull` first.
+
+Because each personal file has one editor, they never conflict. If you both need to change `project-plan.md` at the same time, say so in chat first.
