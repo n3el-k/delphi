@@ -53,6 +53,12 @@ class TicketDraft(BaseModel):
 
 class TicketSet(BaseModel):
     project_title: str
+    description: str = Field(
+        description=(
+            "One paragraph, addressed to the learner, on how you understood their idea: "
+            "who it's for and the core features you inferred. Shown on their dashboard."
+        )
+    )
     tickets: list[TicketDraft]
 
 
@@ -109,6 +115,10 @@ TICKETS_SYSTEM = f"""You write tickets for a learner who is new to software engi
 {AI_RULE}
 
 Turn the learner's project idea into 3-5 tickets that together build a small, working version of it.
+
+First write a one-paragraph description of how you understood the idea: who it's for and the
+core features you inferred. The learner reads this to check you understood them, so say plainly
+anything you assumed that they didn't state.
 
 - Each ticket explains WHY it matters and lists acceptance criteria as observable behaviour.
 - Never explain HOW: no function names, libraries, algorithms, code or step-by-step instructions.
