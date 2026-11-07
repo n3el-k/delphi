@@ -1,8 +1,13 @@
-"""Learner progress. Everything here is computed from the DB, never stored (plan: "computed, not stored")."""
+"""Learner progress: what counts, how skills grow, and when you level up.
+
+Progress is computed from the PR history every time, never stored as a number,
+so it can't drift out of sync with what actually happened.
+"""
 
 from sqlmodel import Session, col, func, select
 
 from app.models import (
+    Answer,
     Finding,
     FindingKind,
     Gate,
@@ -10,53 +15,117 @@ from app.models import (
     Learner,
     Level,
     Project,
+    Question,
     Review,
+    SkillScore,
     Submission,
     SubmissionStatus,
     Ticket,
 )
 
+SKILL_POINTS_PER_PASS = 10  # each skill area on the ticket
+SKILL_POINTS_PER_SECURITY_FIX = 5  # extra security points per fixed security finding
+MAX_SKILL = 100
 
-def get_me(session: Session) -> Learner:
-    """There is exactly one seeded learner, so every endpoint means "me"."""
-    learner = session.exec(select(Learner).order_by(Learner.id)).first()
+
+# --- Who "me" is ---
+
+
+def current_learner(session: Session) -> Learner:
+    """The one place that decides who the current learner is.
+
+    For now there's a single seeded learner. Adding GitHub sign-in later only changes this function.
+    """
+    learner = session.exec(select(Learner).order_by(col(Learner.id))).first()
     if learner is None:
         raise LookupError("No learner seeded. Run `uv run python -m app.seed`.")
     return learner
 
 
-def approved_ticket_ids(session: Session, learner_id: int) -> set[int]:
+def current_level(session: Session, learner: Learner) -> Level:
+    level = session.get(Level, learner.current_level_id)
+    assert level is not None  # guaranteed by the foreign key
+    return level
+
+
+# --- What counts ---
+
+
+def gate_score(session: Session, gate_id: int) -> float | None:
+    """Average of the latest answer's score on each question. None if a question is unanswered."""
+    questions = session.exec(select(Question).where(Question.gate_id == gate_id)).all()
+    if not questions:
+        return None
+    latest_scores = []
+    for q in questions:
+        latest = session.exec(
+            select(Answer).where(Answer.question_id == q.id).order_by(col(Answer.id).desc())
+        ).first()
+        if latest is None:
+            return None
+        latest_scores.append(latest.score)
+    return sum(latest_scores) / len(latest_scores)
+
+
+def counted_ticket_ids(session: Session, learner_id: int, level: Level) -> set[int]:
+    """Tickets on this level whose PR was approved with a gate score at or above the level minimum."""
     rows = session.exec(
-        select(Submission.ticket_id).where(
+        select(Submission.ticket_id, Gate.id)
+        .join(Gate, col(Gate.submission_id) == col(Submission.id))
+        .join(Ticket, col(Submission.ticket_id) == col(Ticket.id))
+        .join(Project, col(Ticket.project_id) == col(Project.id))
+        .where(
             Submission.learner_id == learner_id,
             Submission.status == SubmissionStatus.approved,
+            Gate.status == GateStatus.passed,
+            Project.level_id == level.id,
         )
-    )
-    return set(rows)
+    ).all()
+    counted = set()
+    for ticket_id, gate_id in rows:
+        score = gate_score(session, gate_id)  # type: ignore[arg-type]
+        if score is not None and score >= level.min_gate_score:
+            counted.add(ticket_id)
+    return counted
 
 
 def level_projects(session: Session, level_id: int) -> list[tuple[Project, list[Ticket]]]:
-    """Projects on a level in order, each with its tickets in order."""
-    projects = session.exec(select(Project).where(Project.level_id == level_id).order_by(Project.id)).all()
+    """A level's projects in order, each with its tickets in order."""
+    projects = session.exec(
+        select(Project).where(Project.level_id == level_id).order_by(col(Project.position))
+    ).all()
     return [
-        (p, list(session.exec(select(Ticket).where(Ticket.project_id == p.id).order_by(Ticket.id)).all()))
+        (
+            p,
+            list(session.exec(select(Ticket).where(Ticket.project_id == p.id).order_by(col(Ticket.position))).all()),
+        )
         for p in projects
     ]
 
 
-def is_project_done(tickets: list[Ticket], approved: set[int]) -> bool:
-    """A project is done once every one of its tickets has an approved PR."""
-    return bool(tickets) and all(t.id in approved for t in tickets)
+def is_project_done(tickets: list[Ticket], counted: set[int]) -> bool:
+    """A project is done once every one of its tickets counts."""
+    return bool(tickets) and all(t.id in counted for t in tickets)
 
 
-def security_fixes_done(session: Session, learner_id: int) -> int:
-    """Security findings on this learner's PRs that they went on to fix."""
+def projects_done(session: Session, learner_id: int, level: Level) -> int:
+    assert level.id is not None
+    counted = counted_ticket_ids(session, learner_id, level)
+    return sum(is_project_done(tickets, counted) for _, tickets in level_projects(session, level.id))
+
+
+def security_fixes_done(session: Session, learner_id: int, level: Level) -> int:
+    """Security findings on this learner's approved PRs for this level that they fixed."""
     return session.exec(
         select(func.count(col(Finding.id)))
         .join(Review, col(Finding.review_id) == col(Review.id))
         .join(Submission, col(Review.submission_id) == col(Submission.id))
+        .join(Ticket, col(Submission.ticket_id) == col(Ticket.id))
+        .join(Project, col(Ticket.project_id) == col(Project.id))
         .where(
             Submission.learner_id == learner_id,
+            Submission.status == SubmissionStatus.approved,
+            Project.level_id == level.id,
             Finding.kind == FindingKind.security,
             col(Finding.resolved).is_(True),
         )
@@ -73,7 +142,60 @@ def open_gate_id(session: Session, learner_id: int) -> int | None:
     ).first()
 
 
-def current_level(session: Session, learner: Learner) -> Level:
-    level = session.get(Level, learner.current_level_id)
-    assert level is not None  # enforced by the foreign key
-    return level
+# --- What happens when you pass ---
+
+
+def record_gate_pass(session: Session, learner_id: int, submission_id: int) -> None:
+    """Called by Neel's gate code once, right after a gate passes and the PR is approved.
+
+    Raises skill scores for the ticket's areas, then promotes the learner if the level's
+    requirements are now met. Commits the session.
+    """
+    submission = session.get(Submission, submission_id)
+    learner = session.get(Learner, learner_id)
+    if submission is None or learner is None:
+        raise LookupError("Unknown learner or submission")
+    ticket = session.get(Ticket, submission.ticket_id)
+    assert ticket is not None
+
+    fixes = session.exec(
+        select(func.count(col(Finding.id)))
+        .join(Review, col(Finding.review_id) == col(Review.id))
+        .where(
+            Review.submission_id == submission_id,
+            Finding.kind == FindingKind.security,
+            col(Finding.resolved).is_(True),
+        )
+    ).one()
+
+    gains = {area: SKILL_POINTS_PER_PASS for area in ticket.skill_areas}
+    if fixes:
+        gains["security"] = gains.get("security", 0) + fixes * SKILL_POINTS_PER_SECURITY_FIX
+    for area, points in gains.items():
+        skill = session.exec(
+            select(SkillScore).where(SkillScore.learner_id == learner_id, SkillScore.area == area)
+        ).first()
+        if skill is None:
+            skill = SkillScore(learner_id=learner_id, area=area, score=0)
+        skill.score = min(MAX_SKILL, skill.score + points)
+        session.add(skill)
+
+    session.flush()
+    maybe_promote(session, learner)
+    session.commit()
+
+
+def maybe_promote(session: Session, learner: Learner) -> bool:
+    """Move the learner up a level if they've met every requirement of their current one."""
+    assert learner.id is not None
+    level = current_level(session, learner)
+    met = (
+        projects_done(session, learner.id, level) >= level.required_projects
+        and security_fixes_done(session, learner.id, level) >= level.required_security_fixes
+    )
+    next_level = session.exec(select(Level).where(Level.number == level.number + 1)).first()
+    if not met or next_level is None:
+        return False
+    learner.current_level_id = next_level.id  # type: ignore[assignment]
+    session.add(learner)
+    return True

@@ -1,10 +1,14 @@
-"""Param's learner endpoints: /api/me, /api/levels, /api/dashboard."""
+"""Param's learner endpoints: /api/me, /api/levels, /api/dashboard.
+
+These stay thin: they fetch data, call services/progress.py for the rules,
+and shape the result into the response models from schemas.py.
+"""
 
 from fastapi import APIRouter, Depends
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
 from app.db import get_session
-from app.models import Level, SkillScore
+from app.models import Level, SkillArea, SkillScore
 from app.schemas import (
     Count,
     DashboardOut,
@@ -24,7 +28,7 @@ router = APIRouter(prefix="/api", tags=["learner"])
 
 @router.get("/me")
 def get_me(session: Session = Depends(get_session)) -> MeOut:
-    me = progress.get_me(session)
+    me = progress.current_learner(session)
     level = progress.current_level(session, me)
     return MeOut(
         name=me.name,
@@ -35,14 +39,17 @@ def get_me(session: Session = Depends(get_session)) -> MeOut:
 
 @router.get("/levels")
 def get_levels(session: Session = Depends(get_session)) -> list[LevelOut]:
-    me = progress.get_me(session)
+    me = progress.current_learner(session)
     current = progress.current_level(session, me).number
-    levels = session.exec(select(Level).order_by(Level.number)).all()
+    levels = session.exec(select(Level).order_by(col(Level.number))).all()
     return [
         LevelOut(
             number=lv.number,
             name=lv.name,
             ai_policy=lv.ai_policy,
+            starts_at=lv.starts_at,
+            ends_at=lv.ends_at,
+            review_focus=lv.review_focus,
             unlocks=lv.unlocks,
             requirements=LevelRequirements(
                 projects=lv.required_projects,
@@ -57,41 +64,44 @@ def get_levels(session: Session = Depends(get_session)) -> list[LevelOut]:
 
 @router.get("/dashboard")
 def get_dashboard(session: Session = Depends(get_session)) -> DashboardOut:
-    me = progress.get_me(session)
+    me = progress.current_learner(session)
     assert me.id is not None
     level = progress.current_level(session, me)
-    approved = progress.approved_ticket_ids(session, me.id)
-    projects = progress.level_projects(session, me.current_level_id)
+    assert level.id is not None
+    counted = progress.counted_ticket_ids(session, me.id, level)
+    projects = progress.level_projects(session, level.id)
 
+    # The current project is the first unfinished one; its current ticket is the first that doesn't count yet.
     current_project = current_ticket = None
     for project, tickets in projects:
-        if not progress.is_project_done(tickets, approved):
-            current_project = ProjectRef(id=project.id, title=project.title)  # type: ignore[arg-type]
-            ticket = next((t for t in tickets if t.id not in approved), None)
-            if ticket is not None:
-                current_ticket = TicketOut(
-                    id=ticket.id,  # type: ignore[arg-type]
-                    title=ticket.title,
-                    why=ticket.why,
-                    acceptance_criteria=ticket.acceptance_criteria,
-                )
-            break
+        if progress.is_project_done(tickets, counted):
+            continue
+        current_project = ProjectRef(id=project.id, title=project.title)  # type: ignore[arg-type]
+        ticket = next((t for t in tickets if t.id not in counted), None)
+        if ticket is not None:
+            current_ticket = TicketOut(
+                id=ticket.id,  # type: ignore[arg-type]
+                size=ticket.size,
+                title=ticket.title,
+                why=ticket.why,
+                acceptance_criteria=ticket.acceptance_criteria,
+            )
+        break
 
-    scores = session.exec(select(SkillScore).where(SkillScore.learner_id == me.id)).all()
-    by_area = {s.area: s.score for s in scores}
+    scores = {
+        s.area: s.score for s in session.exec(select(SkillScore).where(SkillScore.learner_id == me.id)).all()
+    }
 
     return DashboardOut(
-        skills=[SkillOut(area=a, score=s) for a, s in by_area.items()],
+        # Always all 7 areas, in a fixed order, so the skill map never jumps around
+        skills=[SkillOut(area=area, score=scores.get(area, 0)) for area in SkillArea],
         current_project=current_project,
         current_ticket=current_ticket,
         open_gate_id=progress.open_gate_id(session, me.id),
         progress=ProgressOut(
-            projects=Count(
-                done=sum(progress.is_project_done(t, approved) for _, t in projects),
-                required=level.required_projects,
-            ),
+            projects=Count(done=sum(progress.is_project_done(t, counted) for _, t in projects), required=level.required_projects),
             security_fixes=Count(
-                done=progress.security_fixes_done(session, me.id),
+                done=progress.security_fixes_done(session, me.id, level),
                 required=level.required_security_fixes,
             ),
         ),
