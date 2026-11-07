@@ -39,7 +39,9 @@ AI is a power tool, so you earn access to it. Beginners start with fundamentals 
 
 Other tools give you the answer. Ours makes you understand, defend, and secure every line you ship, and it widens your skills across the full stack. Generic LLM "learning modes" are opt-in and easy to switch off. Ours is enforced in the workflow: your work isn't accepted until you prove you understand it.
 
-## The level system
+## The level system (future, not in the MVP)
+
+Levels are where the product goes after the hackathon. The MVP has no levels. One fixed AI rule applies to everyone, the Level 1 policy below: the AI reviews and tutors, and never writes your code. Levels stay in the pitch as the vision.
 
 Each level has projects, an AI-permission policy, and a level-up gate.
 
@@ -64,9 +66,9 @@ We can't police which tools someone uses locally. Enforcement comes from the com
 
 ## MVP scope (build fully, in this priority order)
 
-1. **LIVE GitHub loop** (MUST WORK, the demo's centerpiece): a Level 1 project PR → webhook → AI posts a Socratic review with at least one security or correctness finding → learner answers comprehension questions in our app → pass → PR approved, skill profile and level progress update.
-2. **Level map:** all 4 levels visible, with the current one active and the higher ones locked (showing what each unlocks, including AI permissions).
-3. **Learner dashboard:** skill map across the stack, current project and ticket, progress to the next level.
+1. **LIVE GitHub loop** (MUST WORK, the demo's centerpiece): a PR on a ticket → webhook → AI posts a Socratic review with at least one security or correctness finding → learner answers comprehension questions in our app → pass → PR approved, skill profile updates.
+2. **Project idea → tickets:** the learner types a project idea, and Claude turns it into tickets that explain the why and acceptance criteria, never the how.
+3. **Learner dashboard:** skill map across the stack, the current project and its tickets.
 4. **Experience report / portfolio page.**
 
 Seed or fake everything else (auth, signup, assessment, notifications).
