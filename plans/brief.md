@@ -41,13 +41,23 @@ Other tools give you the answer. Ours makes you understand, defend, and secure e
 
 ## The level system
 
-Each level has projects, an AI-permission policy, and a level-up gate.
+Each level has projects, an AI-permission policy, a review focus, and a level-up gate. The thread through all four is **how much you own**: it grows from a few lines to a whole system, and the AI only takes over pieces you've already proven you can do yourself. Each level starts where the last one ended.
 
-- **Level 1, Foundations:** small projects (e.g. calculator, to-do app). NO AI code generation. The AI acts only as reviewer and tutor. Skills: language basics, git, PRs, reading errors, debugging.
-- **Level 2, Full stack basics:** a small app with frontend + backend + database + auth. The AI can explain concepts and answer questions, but still writes no code for you.
-- **Level 3, AI for grunt work:** on bigger projects, tickets are labelled CORE (you write it) or DELEGABLE (AI allowed: tests, boilerplate, styling, config). You must still review and explain any AI-written code you merge.
-- **Level 4, Directing agents:** you design the architecture and own the core (e.g. the whole backend), and agents handle delegable layers (e.g. parts of the frontend, test suites). The skill being taught here is directing and reviewing AI output.
-- **Level-up gates:** completed projects, comprehension-gate scores, and security issues found and fixed.
+| Level | Tickets start at | Tickets end at | AI's role |
+| ----- | ---------------- | -------------- | --------- |
+| 1, Foundations | a few lines (snippet) | a whole function | Reviewer and tutor only. No AI code generation. |
+| 2, Building blocks | a whole function | a whole file | Reviewer and tutor, can explain concepts. Still no code for you. |
+| 3, AI for grunt work | a whole file | AI doing your grunt work | Tickets are CORE (you write it) or DELEGABLE (AI allowed: tests, boilerplate, styling, config). |
+| 4, Directing agents | AI doing grunt work | system design and architecture | You design and own the core; agents build delegable layers. The skill is directing and reviewing AI, which is most of a software engineer's job today. |
+
+**Review and gate on every level.** AI writing code never means skipping understanding. What changes is what the gate checks:
+
+- **Level 1:** your lines and functions ("What happens if this input is empty?", "What does line 12 do?").
+- **Level 2:** how your functions and files fit together ("Why split it this way?").
+- **Level 3:** your core code AND the AI's grunt work ("Explain this AI-written test. What does it miss?", "Why did you accept this approach?").
+- **Level 4:** your design and the agents' output against it ("Why this architecture?", "What did you reject from the AI, and why?").
+
+**Level-up gates:** completed projects (a ticket only counts when its PR is approved with a gate score at or above the level minimum), and security issues found and fixed. Promotion to the next level is real.
 
 We can't police which tools someone uses locally. Enforcement comes from the comprehension gate. If you can't explain it, it doesn't merge, regardless of who wrote it.
 
@@ -63,6 +73,8 @@ We can't police which tools someone uses locally. Enforcement comes from the com
 4. **Experience report / portfolio:** a verifiable record of projects, levels, concepts demonstrated, and security fixes, for employers.
 
 ## MVP scope (build fully, in this priority order)
+
+The MVP is the real skeleton of the full app, not a demo with faked parts. All 4 levels exist in the data and on the level map; Level 1 gets real, playable content first, and Levels 2–4 get content after the MVP without structural changes.
 
 1. **LIVE GitHub loop** (MUST WORK, the demo's centerpiece): a Level 1 project PR → webhook → AI posts a Socratic review with at least one security or correctness finding → learner answers comprehension questions in our app → pass → PR approved, skill profile and level progress update.
 2. **Level map:** all 4 levels visible, with the current one active and the higher ones locked (showing what each unlocks, including AI permissions).
