@@ -8,13 +8,13 @@ The learner app: every screen the learner sees, plus the data and APIs behind th
 
 ## Now
 
-M0: agree the DB schema and API contract with Neel.
+M0 skeleton + M1 together on one branch, `feat/learner-app-m1`, one PR for Neel to review. Schema and API contract v1 are agreed.
 
 ## Next
 
 ### M0: Skeleton + contract
 
-- [ ] Agree `models.py`, `schemas.py` and the API contract with Neel (together, first thing)
+- [x] Agree `models.py`, `schemas.py` and the API contract with Neel (together, first thing)
 - [ ] Vite + React + TypeScript app with Tailwind and shadcn/ui. App shell (nav, layout) and design tokens (colours, type scale, spacing)
 - [ ] SQLModel tables from the agreed schema, plus `seed.py`: one learner, the 4 levels with their AI policies and what they unlock, Level 1 projects and tickets, a starting skill map
 - [ ] `GET /api/me` and `GET /api/levels` returning seeded data, shown in the app with TanStack Query
@@ -46,7 +46,7 @@ M0: agree the DB schema and API contract with Neel.
 
 ## Blocked / need from Neel
 
-- M0: sign-off on the schema and API contract
+- Review of `feat/learner-app-m1` (M0 skeleton + M1). It adds the shared files `main.py`, `config.py`, `db.py`, `models.py` and `schemas.py`, copied from contract v1
 - M2: the gate endpoints (`GET /api/gates/{id}`, `POST /api/gates/{id}/answers`). Mock them in the frontend until they land
 
 ## Notes
