@@ -122,14 +122,14 @@ GET /api/me
 → { name, github_login, current_level: { number, name } }
 
 GET /api/levels
-→ [{ number, name, ai_policy, unlocks: [str],
+→ [{ number, name, ai_policy, starts_at, ends_at, review_focus, unlocks: [str],
      requirements: { projects, min_gate_score, security_fixes },
      status: "done" | "current" | "locked" }]
 
 GET /api/dashboard
 → { skills: [{ area, score }],
-    current_project: { id, title },
-    current_ticket: { id, title, why, acceptance_criteria: [str] },
+    current_project: { id, title } | null,   (null once every project on the level is done)
+    current_ticket: { id, size, title, why, acceptance_criteria: [str] } | null,
     open_gate_id: int | null,
     progress: { projects: { done, required },
                 security_fixes: { done, required } } }
@@ -177,11 +177,14 @@ POST /webhooks/github                        GitHub only. Verifies the signature
 Content (seeded):
 
 ```
-Level         id, number (1–4), name, ai_policy, unlocks (JSON list),
+Level         id, number (1–4), name, ai_policy, starts_at, ends_at, review_focus,
+              unlocks (JSON list),
               required_projects, min_gate_score, required_security_fixes
-Project       id, level_id → Level, title, description, repo_full_name
-Ticket        id, project_id → Project, title, why, acceptance_criteria (JSON list),
+Project       id, level_id → Level, position, title, description, repo_full_name
+Ticket        id, project_id → Project, position, size, title, why,
+              acceptance_criteria (JSON list),
               skill_areas (JSON list), label (core | delegable | null)
+size          snippet | function | file | delegated | system   (the level ramp)
 ```
 
 Learner:
