@@ -122,14 +122,14 @@ GET /api/me
 → { name, github_login, current_level: { number, name } }
 
 GET /api/levels
-→ [{ number, name, ai_policy, starts_at, ends_at, review_focus, unlocks: [str],
+→ [{ number, name, ai_policy, unlocks: [str],
      requirements: { projects, min_gate_score, security_fixes },
      status: "done" | "current" | "locked" }]
 
 GET /api/dashboard
 → { skills: [{ area, score }],
-    current_project: { id, title } | null,   (null once every project on the level is done)
-    current_ticket: { id, size, title, why, acceptance_criteria: [str] } | null,
+    current_project: { id, title },
+    current_ticket: { id, title, why, acceptance_criteria: [str] },
     open_gate_id: int | null,
     progress: { projects: { done, required },
                 security_fixes: { done, required } } }
@@ -177,14 +177,11 @@ POST /webhooks/github                        GitHub only. Verifies the signature
 Content (seeded):
 
 ```
-Level         id, number (1–4), name, ai_policy, starts_at, ends_at, review_focus,
-              unlocks (JSON list),
+Level         id, number (1–4), name, ai_policy, unlocks (JSON list),
               required_projects, min_gate_score, required_security_fixes
-Project       id, level_id → Level, position, title, description, repo_full_name
-Ticket        id, project_id → Project, position, size, title, why,
-              acceptance_criteria (JSON list),
+Project       id, level_id → Level, title, description, repo_full_name
+Ticket        id, project_id → Project, title, why, acceptance_criteria (JSON list),
               skill_areas (JSON list), label (core | delegable | null)
-size          snippet | function | file | delegated | system   (the level ramp)
 ```
 
 Learner:
@@ -307,10 +304,7 @@ Record decisions here so neither of us re-argues them at 3am.
 | _Proposed:_ Schema and API contract v1 (see Architecture) | Lets us both start building against one shape. Param to confirm | 2026-11-07 |
 | _Proposed:_ Gate created by the webhook in `reviewing` state, frontend polls | The bot's link works immediately, and the frontend gets a clear loading state | 2026-11-07 |
 | _Proposed:_ API only returns hints already revealed | Hidden hints in the payload could be read in devtools | 2026-11-07 |
-| ~~No level promotion in the MVP~~ Real promotion: passing Level 1 opens Level 2 | The MVP is the real skeleton of the app, not a demo. Param's call, Neel to confirm in review | 2026-11-07 |
-| _Proposed (Param):_ Levels ramp by ownership size: snippet → function → file → AI grunt work → system design. Review + gate on every level, with a per-level review focus | One clear progression from "write lines" to "direct AI". See brief.md | 2026-11-07 |
-| _Proposed (Param):_ A ticket counts when its PR is approved AND its gate score ≥ the level's `min_gate_score` (gate score = mean of the latest score per question, 0–100) | Uses the requirement we already store, so level-up rules are enforced. Neel: confirm answer scores are 0–100 | 2026-11-07 |
-| _Proposed (Param):_ One learner for now, but every endpoint goes through one `current_learner()` function | GitHub sign-in can be added later by changing one place | 2026-11-07 |
+| No level promotion in the MVP, only progress toward Level 2 | Levels 2–4 aren't playable. Progress is all the demo needs | 2026-11-07 |
 
 ## Open questions
 
