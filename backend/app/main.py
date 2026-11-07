@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 from app.config import settings
 from app.db import create_db
 from app.routers import learner
+from app.services.progress import NotSeededError
 
 
 @asynccontextmanager
@@ -26,9 +27,11 @@ app.add_middleware(
 )
 
 
-@app.exception_handler(LookupError)
-async def not_seeded(_: Request, exc: LookupError) -> JSONResponse:
-    return JSONResponse(status_code=503, content={"detail": str(exc)})
+@app.exception_handler(NotSeededError)
+async def not_seeded(_: Request, exc: NotSeededError) -> JSONResponse:
+    # Only our own, known error gets a friendly message. Any other bug stays a plain 500
+    # so internal details never reach the client.
+    return JSONResponse(status_code=503, content={"detail": "The app has no data yet. Run the seed script."})
 
 
 @app.get("/health")

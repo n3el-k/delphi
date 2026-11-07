@@ -23,6 +23,7 @@ from app.models import (
     Learner,
     Project,
     Question,
+    SkillScore,
     Review,
     Submission,
     SubmissionStatus,
@@ -153,3 +154,86 @@ def test_no_promotion_without_a_security_fix(session: Session) -> None:
         pass_ticket(session, t)
     learner = session.exec(select(Learner)).one()
     assert learner.current_level_id == 1
+
+
+# --- Edge cases and safety ---
+
+
+def test_empty_database_gives_a_clear_503(client: TestClient, session: Session) -> None:
+    for model in (SkillScore, Learner):
+        for row in session.exec(select(model)).all():
+            session.delete(row)
+    session.commit()
+    r = client.get("/api/dashboard")
+    assert r.status_code == 503
+    assert r.json() == {"detail": "The app has no data yet. Run the seed script."}
+
+
+def test_unexpected_errors_dont_leak_details(session: Session) -> None:
+    from fastapi import APIRouter
+
+    router = APIRouter()
+
+    @router.get("/test-boom")
+    def boom() -> dict[str, str]:
+        return {}["secret_internal_key"]  # a KeyError, like a real bug would raise
+
+    app.include_router(router)
+    app.dependency_overrides[get_session] = lambda: session
+    r = TestClient(app, raise_server_exceptions=False).get("/test-boom")
+    app.dependency_overrides.clear()
+    assert r.status_code == 500
+    assert "secret_internal_key" not in r.text
+
+
+def test_cors_only_allows_our_frontend(client: TestClient) -> None:
+    ours = client.get("/api/me", headers={"Origin": "http://localhost:5173"})
+    other = client.get("/api/me", headers={"Origin": "https://evil.example"})
+    assert ours.headers.get("access-control-allow-origin") == "http://localhost:5173"
+    assert "access-control-allow-origin" not in other.headers
+
+
+def test_recording_the_same_pass_twice_counts_once(session: Session) -> None:
+    sub = pass_ticket(session, level1_tickets(session)[0])
+    assert progress.record_gate_pass(session, 1, sub.id) is False  # type: ignore[arg-type]
+    backend = session.exec(select(SkillScore).where(SkillScore.area == "backend")).one()
+    assert backend.score == 10
+
+
+def test_cannot_record_a_pass_for_an_unapproved_pr(session: Session) -> None:
+    ticket = level1_tickets(session)[0]
+    sub = Submission(
+        learner_id=1, ticket_id=ticket.id, repo_full_name="x/y", pr_number=1, pr_url="u",  # type: ignore[arg-type]
+        head_sha="a", diff="", status=SubmissionStatus.awaiting_gate,
+    )
+    session.add(sub)
+    session.commit()
+    with pytest.raises(progress.GatePassError):
+        progress.record_gate_pass(session, 1, sub.id)  # type: ignore[arg-type]
+
+
+def test_cannot_record_a_pass_for_someone_elses_pr(session: Session) -> None:
+    sub = pass_ticket(session, level1_tickets(session)[0])
+    other = Learner(name="Someone else", github_login="someone-else", current_level_id=1)
+    session.add(other)
+    session.commit()
+    with pytest.raises(progress.GatePassError):
+        progress.record_gate_pass(session, other.id, sub.id)  # type: ignore[arg-type]
+
+
+def test_skills_never_go_above_100(session: Session) -> None:
+    skill = session.exec(select(SkillScore).where(SkillScore.area == "backend")).one()
+    skill.score = 95
+    session.add(skill)
+    session.commit()
+    pass_ticket(session, level1_tickets(session)[0])
+    assert skill.score == 100
+
+
+def test_top_level_learner_is_not_promoted_further(session: Session) -> None:
+    learner = progress.current_learner(session)
+    learner.current_level_id = 4
+    session.add(learner)
+    session.commit()
+    assert progress.maybe_promote(session, learner) is False
+    assert learner.current_level_id == 4

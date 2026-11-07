@@ -4,6 +4,8 @@ Progress is computed from the PR history every time, never stored as a number,
 so it can't drift out of sync with what actually happened.
 """
 
+from datetime import UTC, datetime
+
 from sqlmodel import Session, col, func, select
 
 from app.models import (
@@ -28,6 +30,14 @@ SKILL_POINTS_PER_SECURITY_FIX = 5  # extra security points per fixed security fi
 MAX_SKILL = 100
 
 
+class NotSeededError(Exception):
+    """The database has no learner yet."""
+
+
+class GatePassError(ValueError):
+    """record_gate_pass was called for a submission that hasn't really passed."""
+
+
 # --- Who "me" is ---
 
 
@@ -38,7 +48,7 @@ def current_learner(session: Session) -> Learner:
     """
     learner = session.exec(select(Learner).order_by(col(Learner.id))).first()
     if learner is None:
-        raise LookupError("No learner seeded. Run `uv run python -m app.seed`.")
+        raise NotSeededError("No learner seeded. Run `uv run python -m app.seed`.")
     return learner
 
 
@@ -145,18 +155,34 @@ def open_gate_id(session: Session, learner_id: int) -> int | None:
 # --- What happens when you pass ---
 
 
-def record_gate_pass(session: Session, learner_id: int, submission_id: int) -> None:
-    """Called by Neel's gate code once, right after a gate passes and the PR is approved.
+def record_gate_pass(session: Session, learner_id: int, submission_id: int) -> bool:
+    """Called by Neel's gate code right after a gate passes and the PR is approved.
 
     Raises skill scores for the ticket's areas, then promotes the learner if the level's
     requirements are now met. Commits the session.
+
+    Safe to call more than once: it stamps `Gate.passed_at`, and if that's already set it
+    does nothing and returns False. So the gate code should set `Gate.status = passed`
+    but leave `passed_at` to this function.
     """
     submission = session.get(Submission, submission_id)
     learner = session.get(Learner, learner_id)
     if submission is None or learner is None:
-        raise LookupError("Unknown learner or submission")
+        raise GatePassError("Unknown learner or submission")
+    if submission.learner_id != learner_id:
+        raise GatePassError("That submission belongs to a different learner")
+    if submission.status != SubmissionStatus.approved:
+        raise GatePassError("The PR isn't approved yet")
+    gate = session.exec(select(Gate).where(Gate.submission_id == submission_id)).first()
+    if gate is None or gate.status != GateStatus.passed:
+        raise GatePassError("The gate hasn't been passed")
+    if gate.passed_at is not None:
+        return False  # already recorded: never award the same pass twice
+
+    gate.passed_at = datetime.now(UTC)
+    session.add(gate)
     ticket = session.get(Ticket, submission.ticket_id)
-    assert ticket is not None
+    assert ticket is not None  # guaranteed by the foreign key
 
     fixes = session.exec(
         select(func.count(col(Finding.id)))
@@ -183,6 +209,7 @@ def record_gate_pass(session: Session, learner_id: int, submission_id: int) -> N
     session.flush()
     maybe_promote(session, learner)
     session.commit()
+    return True
 
 
 def maybe_promote(session: Session, learner: Learner) -> bool:
