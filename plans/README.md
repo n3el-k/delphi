@@ -2,7 +2,8 @@
 
 | File | What it's for | Who edits it |
 | ---- | ------------- | ------------ |
-| [project-plan.md](project-plan.md) | The idea, scope, architecture, who's doing what, timeline, decisions | Both |
+| [brief.md](brief.md) | The product spec: problem, thesis, level system, learning loop, judging | Both, rarely |
+| [project-plan.md](project-plan.md) | Scope, architecture, API contract, who's doing what, milestones, decisions | Both |
 | [neel.md](neel.md) | Neel's working notes and to-dos | Neel |
 | [param.md](param.md) | Param's working notes and to-dos | Param |
 
