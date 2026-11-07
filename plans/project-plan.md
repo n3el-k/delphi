@@ -107,30 +107,126 @@ frontend/
 
 Shared files change only in small PRs, and you tell the other person first.
 
-### API contract (draft, confirm in M0)
+### API contract (v1, proposed by Neel, Param to confirm)
 
-| Method + path | Owner | Returns |
-| ------------- | ----- | ------- |
-| `GET /api/me` | Param | Seeded learner: name, GitHub login, current level |
-| `GET /api/levels` | Param | 4 levels: name, AI policy, what it unlocks, status (done, current, locked), gate requirements |
-| `GET /api/dashboard` | Param | Skill map scores, current project + ticket, progress to next level |
-| `GET /api/portfolio` | Param | Projects, levels, concepts shown, security fixes, PR links |
-| `GET /api/gates/{id}` | Neel | PR link, review summary, findings, questions, status |
-| `POST /api/gates/{id}/answers` | Neel | Per question: score, explanation, next hint. Overall: passed |
-| `POST /api/reviews/{id}/flag` | Neel | Records a learner's disagreement with a reason |
-| `POST /webhooks/github` | Neel | GitHub only. Verifies the signature, starts a review |
+**Conventions**
 
-Neel's gate code calls Param's `progress.record_gate_pass(...)` when a learner passes.
+- snake_case JSON end to end. The frontend generates its TypeScript types from `/openapi.json` with `openapi-typescript`, so `schemas.py` is the single source of truth.
+- No learner ID in URLs. There's one seeded learner, so every endpoint means "me".
+- Errors use FastAPI's default `{ "detail": ... }`: 404 for unknown IDs, 422 for invalid bodies.
 
-### Data model (draft, confirm in M0)
+**Param's endpoints**
 
-Learner · Level · Project · Ticket · Submission (one PR) · Review · Finding · Gate · Question · Answer · SkillScore · Flag
+```
+GET /api/me
+→ { name, github_login, current_level: { number, name } }
+
+GET /api/levels
+→ [{ number, name, ai_policy, unlocks: [str],
+     requirements: { projects, min_gate_score, security_fixes },
+     status: "done" | "current" | "locked" }]
+
+GET /api/dashboard
+→ { skills: [{ area, score }],
+    current_project: { id, title },
+    current_ticket: { id, title, why, acceptance_criteria: [str] },
+    open_gate_id: int | null,
+    progress: { projects: { done, required },
+                security_fixes: { done, required } } }
+
+GET /api/portfolio
+→ { learner: { name, github_login },
+    levels_completed: [int],
+    projects: [{ title, pr_url, approved_at, concepts: [str] }],
+    security_fixes: [{ vuln_class, file, pr_url, explanation }] }
+```
+
+**Neel's endpoints**
+
+```
+GET /api/gates/{id}
+→ { id, status: "reviewing" | "open" | "passed",
+    pr_url, ticket_title,
+    review: { id, summary, is_fallback } | null,
+    findings: [{ id, kind, vuln_class, file, line, explanation,
+                 socratic_question, hints: [str], resolved }],
+    questions: [{ id, text, file, line,
+                  last_answer: { text, score, passed, explanation, next_hint } | null }] }
+
+POST /api/gates/{id}/answers
+← { answers: [{ question_id, text }] }       text: 1–2000 chars
+→ { passed, results: [{ question_id, score, passed, explanation, next_hint }] }
+
+POST /api/reviews/{id}/flag
+← { reason, finding_id?, answer_id? }        reason: 1–1000 chars
+→ { id, created_at }
+
+POST /webhooks/github                        GitHub only. Verifies the signature, returns 202, reviews in the background
+```
+
+**How it behaves**
+
+- **The gate exists before the review finishes.** The webhook creates the Submission and Gate straight away with `status: "reviewing"`, so the link in the bot's comment always works. The gate page polls (TanStack Query `refetchInterval`) until the status is `open`.
+- **`hints` only holds hints already revealed.** Sending all three and hiding them in the UI would let a learner read the snippet in devtools. Each failed answer reveals the next hint.
+- **Answers are submitted in one batch.** Only the failed ones need answering again.
+- **After a pass, the frontend refetches** the `dashboard` and `levels` queries instead of reading progress from the answers response.
+- Neel's gate code calls Param's `progress.record_gate_pass(learner_id, submission_id)` on a pass. It bumps SkillScores from `Ticket.skill_areas` and counts resolved security Findings.
+
+### Data model (v1, proposed by Neel, Param to confirm)
+
+Content (seeded):
+
+```
+Level         id, number (1–4), name, ai_policy, unlocks (JSON list),
+              required_projects, min_gate_score, required_security_fixes
+Project       id, level_id → Level, title, description, repo_full_name
+Ticket        id, project_id → Project, title, why, acceptance_criteria (JSON list),
+              skill_areas (JSON list), label (core | delegable | null)
+```
+
+Learner:
+
+```
+Learner       id, name, github_login (unique), current_level_id → Level
+SkillScore    id, learner_id → Learner, area (enum), score 0–100
+              unique (learner_id, area)
+              area: frontend, backend, database, git, debugging, security, testing
+```
+
+GitHub loop:
+
+```
+Submission    id, learner_id, ticket_id, repo_full_name, pr_number, pr_url,
+              head_sha, diff (text), status, created_at
+              unique (repo_full_name, pr_number)
+              status: reviewing | awaiting_gate | approved
+Review        id, submission_id, head_sha, summary, policy_flags (JSON),
+              github_comment_id, is_fallback (bool), created_at
+Finding       id, review_id, kind (security | correctness), vuln_class,
+              file, line, explanation, socratic_question,
+              hints (JSON: [concept, where_to_look, snippet]),
+              hints_revealed (int), resolved (bool)
+Gate          id, submission_id (unique), status (reviewing | open | passed), passed_at
+Question      id, gate_id, finding_id (nullable), text, file, line
+Answer        id, question_id, text, score, passed, explanation, next_hint, created_at
+Flag          id, review_id, finding_id (nullable), answer_id (nullable), reason, created_at
+```
+
+Why it's shaped this way:
+
+- **One Review per push, not per PR.** Each `synchronize` push gets a new Review, which gives a before-and-after history for the portfolio ("found `eval()` injection, fixed it in the next commit").
+- **Hints are a JSON list on Finding**, since the ladder is always three steps and only `hints_revealed` changes.
+- **Every attempt is an Answer row**, so "why this grade" covers every attempt, not only the last.
+- **The diff is stored on Submission** so grading doesn't need a GitHub call per answer. It's the learner's own practice-repo code.
+- **Minimal data:** no emails, tokens or passwords.
+- **Computed, not stored:** level status, progress to the next level and the portfolio come from queries.
+- **No promotion logic in the MVP.** The learner stays on Level 1. The requirement columns on `Level` feed the level map and the dashboard progress bar.
 
 ## Who's doing what
 
 | Task | Owner | Status |
 | ---- | ----- | ------ |
-| DB schema + API contract | Both | todo |
+| DB schema + API contract | Both | doing |
 | GitHub App, webhook, AI review | Neel | todo |
 | Comprehension gate: questions, grading, PR approval | Neel | todo |
 | Demo practice repo + demo PR | Neel | todo |
@@ -204,6 +300,10 @@ Record decisions here so neither of us re-argues them at 3am.
 | _Proposed:_ SQLite via SQLModel | No setup, can move to Postgres later | 2026-11-07 |
 | _Proposed:_ Claude `claude-opus-5-5` with `messages.parse` + Pydantic | Output always matches our schema | 2026-11-07 |
 | _Proposed:_ GitHub App for webhook + reviews | Bot identity, can approve PRs | 2026-11-07 |
+| _Proposed:_ Schema and API contract v1 (see Architecture) | Lets us both start building against one shape. Param to confirm | 2026-11-07 |
+| _Proposed:_ Gate created by the webhook in `reviewing` state, frontend polls | The bot's link works immediately, and the frontend gets a clear loading state | 2026-11-07 |
+| _Proposed:_ API only returns hints already revealed | Hidden hints in the payload could be read in devtools | 2026-11-07 |
+| No level promotion in the MVP, only progress toward Level 2 | Levels 2–4 aren't playable. Progress is all the demo needs | 2026-11-07 |
 
 ## Open questions
 
