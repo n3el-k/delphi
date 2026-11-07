@@ -305,6 +305,7 @@ Record decisions here so neither of us re-argues them at 3am.
 | _Proposed:_ Gate created by the webhook in `reviewing` state, frontend polls | The bot's link works immediately, and the frontend gets a clear loading state | 2026-11-07 |
 | _Proposed:_ API only returns hints already revealed | Hidden hints in the payload could be read in devtools | 2026-11-07 |
 | No level promotion in the MVP, only progress toward Level 2 | Levels 2–4 aren't playable. Progress is all the demo needs | 2026-11-07 |
+| Every change, `plans/` included, goes through a PR reviewed by the other person | Keeps `main` working and both of us aware of every change | 2026-11-07 |
 
 ## Open questions
 

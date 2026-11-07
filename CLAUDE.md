@@ -26,7 +26,7 @@ Follow the rules in CONTRIBUTING.md:
 The ones that are easy to get wrong:
 
 - **Never credit Claude.** No `Co-Authored-By: Claude` trailers in commits and no "Generated with Claude Code" lines in PR descriptions. Commits come from whoever you're working with, nobody else.
-- **Never commit code straight to `main`.** Make a `feat/`, `fix/` or `chore/` branch, push it, and open a PR with `gh pr create`. Only changes inside `plans/` may go straight to `main`, and only after a `git pull`.
+- **Never commit or push anything to `main`, `plans/` included.** Make a `feat/`, `fix/` or `chore/` branch, push it, and open a PR with `gh pr create`. Don't merge it until the other person has reviewed it.
 - Pull `main` before starting work and before opening a PR.
 
 ## Who owns what
