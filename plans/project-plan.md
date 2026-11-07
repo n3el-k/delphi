@@ -287,6 +287,7 @@ Record a backup of the live loop in case the venue Wi-Fi fails.
 - [ ] README filled in
 - [ ] Demo video (2–5 min)
 - [ ] Submitted on Devpost with the public GitHub link
+- [ ] Devpost title is exactly `TEAM ID-TEAM NAME - PROJECT NAME` (wrong format fails prescreening)
 
 ## Decisions
 
