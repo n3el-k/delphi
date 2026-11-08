@@ -4,7 +4,7 @@
 
 Built at Hack the Change 2026 (Calgary), Prompt 2: developing in-demand skills in a changing job market.
 
-**Watch the pitch:** [Delphi on YouTube](https://www.youtube.com/watch?v=PXS_d87tGQs)
+**Watch the pitch:** [Delphi on YouTube](https://youtu.be/YiKDJ3Ivrbg)
 
 ## Team
 
@@ -23,6 +23,13 @@ New developers "git push and pray". AI tools produce code that works, but they c
 4. **Progress you can show.** The dashboard tracks your skill map across the stack, and the portfolio lists approved PRs and the security flaws you found and fixed.
 
 Understanding is enforced at merge time, so it doesn't depend on which tools someone used locally. Every grade shows why, and any review, finding or grade can be flagged.
+
+## Built for trust
+
+- **Accessible:** you can use the whole app with just a keyboard or a screen reader. Every input has a label, and text is easy to read against its background.
+- **Transparent:** every grade comes with the reason behind it, and you can flag any review you disagree with.
+- **Private:** we only keep what the app needs: your name, your GitHub username, the code in your pull request and your answers. No emails or passwords.
+- **Secure:** secret keys never go in the code, and the app checks that every message from GitHub really came from GitHub.
 
 ## Tech stack
 
