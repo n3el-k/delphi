@@ -58,4 +58,20 @@ We're a security and accessibility product, so our own code has to pass the stan
 
 ## Commands
 
-Not set up yet. Once the skeleton exists, record here how to install, run the backend, run the frontend, seed the database and run the tests.
+Backend, from `backend/` (copy `.env.example` to `.env` and fill it in first):
+
+```bash
+uv sync                                   # install
+uv run python -m app.seed                 # wipe the DB and seed the learner (rerun after a models.py change)
+uv run fastapi dev app/main.py            # API on http://localhost:8000, docs at /docs
+uv run pytest                             # tests (offline: GitHub and Claude are faked)
+uv run python -m scripts.try_reviewer     # real Claude calls on the demo diff (costs a little)
+```
+
+GitHub webhooks in dev: run exactly one smee client. Two clients deliver every event twice.
+
+```bash
+npx -y smee-client --url "$SMEE_URL" --target http://localhost:8000/webhooks/github
+```
+
+Frontend: not set up yet.
