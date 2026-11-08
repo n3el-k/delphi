@@ -1,0 +1,61 @@
+diff --git a/README.md b/README.md
+index eca0452..0eda995 100644
+--- a/README.md
++++ b/README.md
+@@ -16,4 +16,4 @@ python -m pytest
+ 
+ 1. Make `add()` and `subtract()` return the right answer. ✅
+ 2. Handle dividing by zero. ✅
+-3. Evaluate a whole expression like `2 + 3 * 4`.
++3. Evaluate a whole expression like `2 + 3 * 4`. ✅
+diff --git a/calculator.py b/calculator.py
+index d4da77c..ad631bf 100644
+--- a/calculator.py
++++ b/calculator.py
+@@ -25,4 +25,10 @@ def divide(a: float, b: float) -> float:
+ 
+ def evaluate(expression: str) -> float:
+     """Work out a whole expression like '2 + 3 * 4'."""
+-    raise CalculatorError("Not built yet (ticket 3).")
++    expression = expression.strip()
++    if not expression:
++        raise CalculatorError("Please type an expression.")
++    try:
++        return eval(expression)
++    except (SyntaxError, NameError):
++        raise CalculatorError(f"I can't work out '{expression}'.")
+diff --git a/tests/test_calculator.py b/tests/test_calculator.py
+index ee0a433..9e51a73 100644
+--- a/tests/test_calculator.py
++++ b/tests/test_calculator.py
+@@ -1,6 +1,6 @@
+ import pytest
+ 
+-from calculator import CalculatorError, add, divide, subtract
++from calculator import CalculatorError, add, divide, evaluate, subtract
+ 
+ 
+ def test_add():
+@@ -21,3 +21,22 @@ def test_divide():
+ def test_divide_by_zero_gives_a_clear_error():
+     with pytest.raises(CalculatorError, match="divide by zero"):
+         divide(1, 0)
++
++
++def test_evaluate_follows_order_of_operations():
++    assert evaluate("2 + 3 * 4") == 14
++
++
++def test_evaluate_handles_brackets_and_decimals():
++    assert evaluate("(2 + 3) * 4") == 20
++    assert evaluate("1.5 * 2") == 3
++
++
++def test_evaluate_rejects_invalid_input():
++    with pytest.raises(CalculatorError):
++        evaluate("2 + + ")
++
++
++def test_evaluate_rejects_empty_input():
++    with pytest.raises(CalculatorError):
++        evaluate("   ")
