@@ -73,6 +73,8 @@ class FindingOut(BaseModel):
 
 
 class AnswerOut(BaseModel):
+    # The id to send as answer_id when flagging this grade.
+    id: int
     text: str
     score: int
     passed: bool
@@ -114,6 +116,8 @@ class AnswersIn(BaseModel):
 
 class AnswerResult(BaseModel):
     question_id: int
+    # The saved attempt, so a grade can be flagged straight away without refetching the gate.
+    answer_id: int
     score: int
     passed: bool
     explanation: str

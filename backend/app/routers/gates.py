@@ -110,6 +110,7 @@ def read_gate(gate_id: int, session: Session = Depends(get_session)) -> GateOut:
                     file=q.file,
                     line=q.line,
                     last_answer=AnswerOut(
+                        id=answer.id,  # type: ignore[arg-type]
                         text=answer.text,
                         score=answer.score,
                         passed=answer.passed,
@@ -185,15 +186,15 @@ def submit_answers(gate_id: int, body: AnswersIn, session: Session = Depends(get
     for a, grade in zip(body.answers, grades):
         passed = grade.score >= reviewer.PASS_SCORE
         next_hint = None if passed else _next_hint(by_id.get(questions[a.question_id].finding_id), grade.next_hint)
-        session.add(
-            Answer(
-                question_id=a.question_id, text=a.text, score=grade.score, passed=passed,
-                explanation=grade.explanation, next_hint=next_hint,
-            )
+        row = Answer(
+            question_id=a.question_id, text=a.text, score=grade.score, passed=passed,
+            explanation=grade.explanation, next_hint=next_hint,
         )
+        session.add(row)
+        session.flush()  # gives the answer its id for the response
         results.append(
             AnswerResult(
-                question_id=a.question_id, score=grade.score, passed=passed,
+                question_id=a.question_id, answer_id=row.id, score=grade.score, passed=passed,  # type: ignore[arg-type]
                 explanation=grade.explanation, next_hint=next_hint,
             )
         )

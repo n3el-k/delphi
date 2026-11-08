@@ -243,8 +243,9 @@ def test_a_weak_answer_fails_with_a_hint_and_nothing_is_approved(
     body = answer(client, gate, (questions[0], "a good answer"), (questions[1], "dunno")).json()
     assert body["passed"] is False
     weak = body["results"][1]
+    assert weak["answer_id"] == session.exec(select(Answer).where(Answer.question_id == questions[1].id)).one().id
     assert weak == {
-        "question_id": questions[1].id, "score": 40, "passed": False,
+        "question_id": questions[1].id, "answer_id": weak["answer_id"], "score": 40, "passed": False,
         "explanation": "Too vague.", "next_hint": "Think about what the user can type.",
     }
     assert body["results"][0]["next_hint"] is None
@@ -457,3 +458,13 @@ def test_a_flag_changes_nothing_else(client: TestClient, session: Session, gate:
     assert session.get(Answer, graded.id).score == 90  # type: ignore[union-attr]
     assert session.get(Gate, gate.id).status == GateStatus.passed  # type: ignore[union-attr]
     assert fakes["approved"] == approvals
+
+
+def test_answer_ids_from_both_responses_can_be_flagged(
+    client: TestClient, session: Session, gate: Gate, fakes: dict
+) -> None:
+    review, _, questions = add_push(session, gate, "def456", security=False)
+    posted = answer(client, gate, (questions[0], "dunno")).json()["results"][0]["answer_id"]
+    shown = client.get(f"/api/gates/{gate.id}").json()["questions"][0]["last_answer"]["id"]
+    assert posted == shown
+    assert flag(client, review.id, answer_id=shown).status_code == 201  # type: ignore[arg-type]
