@@ -2,8 +2,8 @@
 
 Run from backend/:
 
-    uv run --env-file .env python -m scripts.try_reviewer
-    uv run --env-file .env python -m scripts.try_reviewer review
+    uv run python -m scripts.try_reviewer
+    uv run python -m scripts.try_reviewer review
 
 It makes real API calls, so each run costs a little.
 """
