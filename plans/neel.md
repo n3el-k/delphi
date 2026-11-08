@@ -22,7 +22,7 @@ Next: test the whole app end to end once Param's `POST /api/projects` and screen
 - [x] smee.io channel forwarding to local `/webhooks/github`. Confirm a ping arrives
 - [x] Claude API key in `.env`. One test `messages.parse` call that returns a Pydantic model
 - [x] Demo practice repo with a demo PR that has a real flaw: `eval()` on user input (code injection). No longer seeded: on stage it's linked through the idea form
-- [ ] Check the demo PR still fits the expression ticket in `FALLBACK_TICKETS` (`CalculatorError`, divide by zero), and add an input-length cap to `demo/evaluate-fix` (see Notes)
+- [x] Check the demo PR still fits the expression ticket in `FALLBACK_TICKETS` (`CalculatorError`, divide by zero), and add an input-length cap to `demo/evaluate-fix` (see Notes). All four acceptance criteria hold on the fix branch. The cap (200 characters) is a second commit on `demo/evaluate-fix`, so the fix push is now 2 commits
 
 ### M1: Live review + tickets
 
@@ -77,3 +77,4 @@ Next: test the whole app end to end once Param's `POST /api/projects` and screen
 - Claude: `claude-opus-5-5`. `client.messages.parse(..., output_format=Model)`, then read `response.parsed_output`.
 - `reviewer.py` uses `client.beta.messages.parse` with `fallbacks="default"` (beta `server-side-fallback-2026-07-01`), so if Opus 5.5's safety classifier declines security-flavoured code, the API retries on another model in the same call.
 - First runs (2026-11-07): tickets take ~15s, the review ~29s, which fits inside the 60s timeout. On the `eval()` PR it found CWE-94 at `calculator.py:32`, the `1/0` crash, other inputs that crash or slip through, and the missing tests. On `demo/evaluate-fix` it found one real issue: `_work_out` recurses once per operator, so a very long sum crashes with `RecursionError`. To keep the fix push clean in the demo, add an input-length cap to `demo/evaluate-fix`.
+- With the cap (2026-11-07): the fix push's review has no `RecursionError` and one correctness finding instead (`1e999` gives `inf`, not a `CalculatorError`). Correctness doesn't block the pass, and the first question asks the learner to explain the `eval()` fix. Review took ~45s.
