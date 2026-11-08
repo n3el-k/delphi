@@ -34,8 +34,10 @@ venv/
 # Logs
 *.log
 
-# Claude Code local files
-.claude/settings.local.json
+# Claude Code and planning notes: kept locally, not published
+.claude/
+CLAUDE.md
+plans/
 
 # Keys and local databases: never commit these, even by accident
 *.pem

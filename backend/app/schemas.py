@@ -1,4 +1,4 @@
-"""Request and response models: the API contract v1 (plans/project-plan.md).
+"""Request and response models: the API contract v1.
 
 The frontend generates its TypeScript types from these through /openapi.json,
 so this file is the single source of truth. Neel's gate and flag models go here too.
