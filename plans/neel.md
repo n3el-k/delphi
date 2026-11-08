@@ -8,7 +8,9 @@ The GitHub + AI pipeline: everything that talks to GitHub or Claude. I meet Para
 
 ## Now
 
-M1: `reviewer.py` (`generate_tickets` with its cached fallback, and `review_diff`) is in PR #4, waiting on Param's review. PR #2 (backend skeleton) is merged, so next is wiring the reviewer into it, then the webhook and GitHub client.
+The webhook is in the `feat/webhook` PR: signed `POST /webhooks/github`, the GitHub App client, and a background task that reviews the PR, saves it and posts the bot comment. The gate opens with no questions until the M2 questions PR. It needs PR #7 (Anthropic key from settings) merged to run live, and `config.py` will need a small merge with #7. Next: a live run on the demo repo through smee, then M2.
+
+Previously: M1: `reviewer.py` (`generate_tickets` with its cached fallback, and `review_diff`) is in PR #4, waiting on Param's review. PR #2 (backend skeleton) is merged, so next is wiring the reviewer into it, then the webhook and GitHub client.
 
 ## Next
 
@@ -24,14 +26,14 @@ M1: `reviewer.py` (`generate_tickets` with its cached fallback, and `review_diff
 
 ### M1: Live review + tickets
 
-- [ ] `POST /webhooks/github`: verify `X-Hub-Signature-256`, handle `pull_request` opened and synchronize, return 200 fast and do the work in a background task
-- [ ] Fetch the PR diff and match it to the learner and ticket: `Ticket: #<id>` in the PR description, else the learner's first ticket that isn't done. On stage, read the id off the dashboard and type it into the demo PR
+- [x] `POST /webhooks/github`: verify `X-Hub-Signature-256`, handle `pull_request` opened, reopened and synchronize, return 202 fast and do the work in a background task
+- [x] Fetch the PR diff and match it to the learner and ticket (the learner comes from the repo linked to their project, not the PR author): `Ticket: #<id>` in the PR description, else the learner's first ticket that isn't done. On stage, read the id off the dashboard and type it into the demo PR
 - [x] `reviewer.generate_tickets(idea)`: Claude turns a project idea into 3–5 tickets (title, why, acceptance criteria, skill areas), never the how, with the core-feature ticket first. Param's `POST /api/projects` calls it. Falls back to the calculator's tickets if Claude fails (see M3)
 - [x] Review prompt returning the `Review` model: Socratic questions, security and correctness findings (class, file, line), hint ladder, policy flags against the one fixed AI rule (the AI never writes your code)
 - [ ] Don't create a second `Finding` when a later push finds the same vulnerability again, so a fix is only counted once
 - [x] Enforce "no full corrected code": a rule in the prompt, plus rejecting snippets longer than about 5 lines (one retry, then `ReviewerError`)
-- [ ] Post the review on the PR as the bot, with a link to the gate page in our app
-- [ ] Save the review and findings to the DB
+- [x] Post the review on the PR as the bot, with a link to the gate page in our app. Only the concept hint goes on GitHub, so `hints_revealed` starts at 1
+- [x] Save the review and findings to the DB
 
 ### M2: Gate loop end to end
 
@@ -67,7 +69,7 @@ M1: `reviewer.py` (`generate_tickets` with its cached fallback, and `review_diff
 - [x] Add `anthropic` to `backend/pyproject.toml` (shared file, Param told in the PR #2 approval)
 - [ ] Add `anthropic_api_key` to `config.Settings` and pass it to `anthropic.Anthropic(api_key=...)`. Right now the SDK reads it from the environment, which only works with `uv run --env-file .env`
 - [x] Replace the `SkillAreaName` Literal in `reviewer.py` with `models.SkillArea`
-- [ ] Map `ReviewResult` onto `Review` + `Finding` rows (`hints` = `[concept, where_to_look, snippet]`) and `TicketSet` onto `Project` + `Ticket`
+- [ ] Map `ReviewResult` onto `Review` + `Finding` rows (`hints` = `[concept, where_to_look, snippet]`) ~~and `TicketSet` onto `Project` + `Ticket`~~ Review side done in the webhook PR. Tickets are Param's `POST /api/projects`
 - [ ] Run `scripts/try_reviewer.py` with plain `uv run python -m scripts.try_reviewer` (it now takes the demo ticket from `FALLBACK_TICKETS`, since there's no seeded project any more)
 - [ ] Add the run and test commands to the Commands section of CLAUDE.md
 
