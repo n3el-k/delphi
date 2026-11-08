@@ -45,9 +45,9 @@ M1: `reviewer.py` (`generate_tickets` with its cached fallback, and `review_diff
 
 - [ ] Return the "why" with every grade and finding. Add `POST /api/reviews/{id}/flag`
 - [ ] Timeouts and retries on Claude and GitHub calls. Handle `stop_reason == "refusal"`
-- [x] Cached fallback tickets for the calculator: `generate_tickets` returns them with `is_fallback=True` when Claude fails, with a 25s timeout and one SDK retry. The expression ticket comes first, matching the demo PR
+- [x] Cached fallback tickets for the calculator: `generate_tickets` returns them with `is_fallback=True` when Claude fails, with a 20s timeout and one SDK retry (~40s worst case). It never raises: cut-off JSON and unexpected errors fall back too, and a bad key is logged as an error. The expression ticket comes first, matching the demo PR
 - [ ] Cached review and questions for the demo PR, in case the API is slow or down during judging
-- [ ] Agree with Param who adds `is_fallback` to the `POST /api/projects` response in `schemas.py` and, if the label should survive a reload, a column on `Project`
+- [x] Agree who adds `is_fallback`: Param adds it to the `POST /api/projects` response and a `Project` column, in the `POST /api/projects` PR
 
 ### M4: Polish + submit
 
@@ -57,8 +57,7 @@ M1: `reviewer.py` (`generate_tickets` with its cached fallback, and `review_diff
 
 ## Blocked / need from Param
 
-- Review of PR #4 (reviewer service) and PR #5 (plan update: no seeded projects)
-- A decision on who adds `is_fallback` to `schemas.py` (see M3)
+- Re-review of PR #4 (reviewer service) and review of the plan update PR (no seeded projects)
 - Raise with Param (not posted yet): `progress.gate_score` averages the latest scores, but the pass rule is every question ≥ 70, so the skill-points check there should use the minimum. `schemas.py` also imports `TicketStatus` from `services/progress.py`; the contract file shouldn't depend on a service
 
 ## Wiring into the skeleton (PR #2 is merged)
@@ -67,7 +66,7 @@ M1: `reviewer.py` (`generate_tickets` with its cached fallback, and `review_diff
 
 - [x] Add `anthropic` to `backend/pyproject.toml` (shared file, Param told in the PR #2 approval)
 - [ ] Add `anthropic_api_key` to `config.Settings` and pass it to `anthropic.Anthropic(api_key=...)`. Right now the SDK reads it from the environment, which only works with `uv run --env-file .env`
-- [ ] Replace the `SkillAreaName` Literal in `reviewer.py` with `models.SkillArea`
+- [x] Replace the `SkillAreaName` Literal in `reviewer.py` with `models.SkillArea`
 - [ ] Map `ReviewResult` onto `Review` + `Finding` rows (`hints` = `[concept, where_to_look, snippet]`) and `TicketSet` onto `Project` + `Ticket`
 - [ ] Run `scripts/try_reviewer.py` with plain `uv run python -m scripts.try_reviewer` (it now takes the demo ticket from `FALLBACK_TICKETS`, since there's no seeded project any more)
 - [ ] Add the run and test commands to the Commands section of CLAUDE.md

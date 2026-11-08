@@ -3,8 +3,8 @@
 Every call returns a Pydantic model through `messages.parse`, so the output is
 checked against our schema before any of our code touches it.
 
-It doesn't import `models.py` or `config.py` yet: it was built before the backend
-skeleton (PR #2) landed, and wiring those in is a follow-up.
+It doesn't use `config.py` yet: it was built before the backend skeleton (PR #2)
+landed, and reading the key from settings is a follow-up.
 The Anthropic SDK reads ANTHROPIC_API_KEY from the environment by itself.
 """
 
@@ -13,7 +13,9 @@ from functools import cache
 from typing import Literal
 
 import anthropic
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
+
+from app.models import SkillArea
 
 MODEL = "claude-opus-5-5"
 
@@ -26,11 +28,17 @@ FALLBACK_BETA = "server-side-fallback-2026-07-01"
 # 5xx), so the worst case is about twice this before the caller's fallback kicks in.
 # Reviewing a small diff takes ~30s, so it gets the longer limit.
 TIMEOUT_SECONDS = 60.0
-# Tickets take ~15s. The learner is watching a spinner, so this one is shorter.
-TICKETS_TIMEOUT_SECONDS = 25.0
+# Tickets take ~15s. The learner is watching a spinner, so this one is shorter:
+# with the retry, at most ~40s before the example tickets show.
+TICKETS_TIMEOUT_SECONDS = 20.0
 
 # A hint snippet longer than this is getting close to "the corrected code".
 MAX_SNIPPET_LINES = 5
+
+# The idea summary on the dashboard card. Claude is asked for the target and the
+# result is trimmed to the max, so the card's size is predictable.
+SUMMARY_TARGET_CHARS = 400
+MAX_SUMMARY_CHARS = 500
 
 # The one rule for every learner in the MVP. It lives in one place so it can
 # become one rule per level later.
@@ -39,10 +47,6 @@ AI_RULE = (
     "solutions, no corrected versions of their functions, no copy-pasteable fixes."
 )
 
-# Matches SkillArea in models.py (PR #2). Switch to importing it once that merges.
-SkillAreaName = Literal[
-    "frontend", "backend", "database", "git", "debugging", "security", "testing"
-]
 
 
 # --- Output shapes (what Claude returns) ---------------------------------------
@@ -53,7 +57,7 @@ class TicketDraft(BaseModel):
     title: str = Field(description="Short, imperative, e.g. 'Evaluate a whole expression'")
     why: str = Field(description="Why this matters to the user or the codebase. Never how to build it.")
     acceptance_criteria: list[str] = Field(description="3-5 checkable outcomes, phrased as behaviour")
-    skill_areas: list[SkillAreaName] = Field(description="1-3 areas this ticket exercises")
+    skill_areas: list[SkillArea] = Field(description="1-3 areas this ticket exercises")
 
 
 class TicketSet(BaseModel):
@@ -61,7 +65,8 @@ class TicketSet(BaseModel):
     description: str = Field(
         description=(
             "One paragraph, addressed to the learner, on how you understood their idea: "
-            "who it's for and the core features you inferred. Shown on their dashboard."
+            f"who it's for and the core features you inferred. At most {SUMMARY_TARGET_CHARS} "
+            "characters. Shown on their dashboard."
         )
     )
     tickets: list[TicketDraft]
@@ -69,6 +74,10 @@ class TicketSet(BaseModel):
 
 class TicketResult(TicketSet):
     """What generate_tickets returns. Not sent to Claude, so Claude never sets the flag."""
+
+    # A hard cap so the dashboard card has a predictable size. generate_tickets
+    # trims to it, so this never fails on Claude's output.
+    description: str = Field(max_length=MAX_SUMMARY_CHARS)
 
     # True when Claude was unavailable and these are the cached example tickets.
     # The UI says so and offers "Try again".
@@ -174,6 +183,9 @@ or work clearly outside the ticket. Leave it empty if there's nothing."""
 # --- Fallbacks ------------------------------------------------------------------
 # Known-good output for when Claude is unavailable during judging. The first
 # ticket is the one the demo PR (the eval() trap) is written against.
+# These name functions (evaluate(), divide(), CalculatorError), which the tickets
+# prompt forbids. That's deliberate: the demo repo already has those functions,
+# and the criteria have to match the code the demo PR changes.
 
 FALLBACK_TICKETS = TicketSet(
     project_title="Calculator",
@@ -246,6 +258,10 @@ FALLBACK_TICKETS = TicketSet(
 
 logger = logging.getLogger(__name__)
 
+# 400 bad request, 401 bad key, 403 no access, 404 wrong model name: our problem,
+# unlike timeouts, 429 or 5xx.
+_OUR_FAULT_STATUSES = {400, 401, 403, 404}
+
 @cache
 def _client() -> anthropic.Anthropic:
     # Created on first use, not at import, so importing this module (e.g. in tests)
@@ -276,9 +292,17 @@ def _parse(
     except anthropic.APITimeoutError as e:
         raise ReviewerError("Claude timed out") from e
     except anthropic.APIStatusError as e:
+        if e.status_code in _OUR_FAULT_STATUSES:
+            # A bad key or a bad request won't fix itself, so make it loud, not just
+            # a fallback. Only the status goes in the log, never the key.
+            logger.error("Claude API error %s: check the API key and the request", e.status_code)
         raise ReviewerError(f"Claude API error {e.status_code}") from e
     except anthropic.APIConnectionError as e:
         raise ReviewerError("Couldn't reach Claude") from e
+    except ValidationError as e:
+        # parse() validates Claude's JSON inside the call, so a cut-off or malformed
+        # answer raises here, before the stop_reason checks below can run.
+        raise ReviewerError("Claude's answer didn't match the schema") from e
 
     if response.stop_reason == "refusal":
         category = response.stop_details.category if response.stop_details else None
@@ -315,8 +339,35 @@ def generate_tickets(idea: str) -> TicketResult:
     except ReviewerError as e:
         # The message is ours (no key or request content), so it's safe to log.
         logger.warning("generate_tickets fell back to the cached tickets: %s", e)
-        return TicketResult(**FALLBACK_TICKETS.model_dump(), is_fallback=True)
-    return TicketResult(**result.model_dump(), is_fallback=False)
+        return _fallback()
+    except Exception:
+        # Last resort: this function promises never to raise for a Claude problem,
+        # so an error we didn't foresee still gives the demo its tickets.
+        logger.exception("generate_tickets hit an unexpected error, using the cached tickets")
+        return _fallback()
+    data = result.model_dump()
+    data["description"] = _trim_summary(data["description"])
+    return TicketResult(**data, is_fallback=False)
+
+
+def _fallback() -> TicketResult:
+    return TicketResult(**FALLBACK_TICKETS.model_dump(), is_fallback=True)
+
+
+def _trim_summary(text: str) -> str:
+    """Keep the summary within MAX_SUMMARY_CHARS, cut at a sentence end where possible.
+
+    The prompt asks for less, so this rarely runs. Trimming beats failing over to
+    the example tickets just because the summary ran long.
+    """
+    text = text.strip()
+    if len(text) <= MAX_SUMMARY_CHARS:
+        return text
+    cut = text[:MAX_SUMMARY_CHARS]
+    end = cut.rfind(". ")
+    if end > MAX_SUMMARY_CHARS // 2:
+        return cut[: end + 1]
+    return cut[: MAX_SUMMARY_CHARS - 1].rstrip() + "…"
 
 
 def _long_snippets(review: ReviewResult) -> list[ReviewFinding]:
