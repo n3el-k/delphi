@@ -289,3 +289,41 @@ def test_a_failed_comment_still_opens_the_gate(
     deliver(client, pr_event())
     assert session.exec(select(Gate)).one().status == GateStatus.open
     assert session.exec(select(Review)).one().github_comment_id is None
+
+
+# --- Repeat deliveries ---------------------------------------------------------
+
+
+def test_a_repeat_delivery_of_the_same_push_is_ignored(
+    client: TestClient, session: Session, tickets: list[Ticket], fakes: dict
+) -> None:
+    # Seen live: a second smee client forwarded every event twice.
+    deliver(client, pr_event())
+    assert deliver(client, pr_event()).json() == {"status": "ignored"}
+    assert fakes["reviews"] == 1
+    assert len(fakes["comments"]) == 1
+    assert len(session.exec(select(Review)).all()) == 1
+
+
+def test_reopening_retries_a_push_whose_review_failed(
+    client: TestClient, session: Session, tickets: list[Ticket], fakes: dict, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def fail(diff: str, ticket: reviewer.TicketContext) -> reviewer.ReviewResult:
+        raise reviewer.ReviewerError("Claude timed out")
+
+    monkeypatch.setattr(reviewer, "review_diff", fail)
+    deliver(client, pr_event())
+    monkeypatch.setattr(reviewer, "review_diff", lambda diff, ticket: REVIEW)
+
+    assert deliver(client, pr_event(action="reopened")).json() == {"status": "reviewing"}
+    assert session.exec(select(Gate)).one().status == GateStatus.open
+    assert len(session.exec(select(Review)).all()) == 1
+
+
+def test_reopening_an_already_reviewed_push_keeps_the_gate_open(
+    client: TestClient, session: Session, tickets: list[Ticket], fakes: dict
+) -> None:
+    deliver(client, pr_event())
+    assert deliver(client, pr_event(action="reopened")).json() == {"status": "ignored"}
+    assert session.exec(select(Gate)).one().status == GateStatus.open
+    assert fakes["reviews"] == 1

@@ -131,6 +131,13 @@ def register_submission(session: Session, event: PullRequestEvent) -> Submission
     ).first()
     if submission is not None and submission.status == SubmissionStatus.approved:
         return None  # already approved: a later push doesn't reopen the gate
+    if submission is not None and submission.head_sha == pr.head.sha:
+        # The same push again: GitHub redelivering, or two tunnels forwarding one event.
+        # Only `reopened` gets another try, and only if this push was never reviewed
+        # (its review failed), so a learner can retry without pushing a dummy commit.
+        if event.action != "reopened" or _has_review(session, submission.id, pr.head.sha):  # type: ignore[arg-type]
+            logger.info("Ignoring a repeat delivery for %s#%s at %s", repo, pr.number, pr.head.sha[:7])
+            return None
 
     if submission is None:
         ticket = pick_ticket(session, project, pr.body)
@@ -166,6 +173,12 @@ def register_submission(session: Session, event: PullRequestEvent) -> Submission
     session.commit()
     session.refresh(submission)
     return submission
+
+
+def _has_review(session: Session, submission_id: int, head_sha: str) -> bool:
+    return session.exec(
+        select(Review.id).where(Review.submission_id == submission_id, Review.head_sha == head_sha)
+    ).first() is not None
 
 
 def pick_ticket(session: Session, project: Project, pr_body: str | None) -> Ticket | None:
@@ -219,6 +232,10 @@ def review_submission(engine: Engine, submission_id: int, head_sha: str) -> None
         session.refresh(submission)
         if submission.head_sha != head_sha:
             logger.info("Dropping the review of %s for submission %s: a newer push arrived", head_sha, submission_id)
+            return
+        # Last check against two tasks for the same push racing each other.
+        if _has_review(session, submission_id, head_sha):
+            logger.info("Dropping a second review of %s for submission %s", head_sha, submission_id)
             return
 
         review = Review(
