@@ -1,23 +1,44 @@
-# Hack the Change 2026
+# Delphi: know thy code
 
-> One-line pitch goes here.
+> AI writes code for you. Delphi makes sure you understand it. An AI senior reviewer won't approve your pull request until you can explain it.
+
+Built at Hack the Change 2026 (Calgary), Prompt 2: developing in-demand skills in a changing job market.
 
 ## Team
 
 - Neel Kochhar ([@n3el-k](https://github.com/n3el-k))
-- [@param-m1](https://github.com/param-m1)
+- Param ([@param-m1](https://github.com/param-m1))
 
 ## The problem
 
-_What are we solving, and for whom?_
+New developers "git push and pray". AI tools produce code that works, but they can't say what it does, and they can't spot the security flaws it quietly introduces. Entry-level work is the work AI now does, so what's left to learn is understanding, debugging, security judgment and breadth.
 
-## Our solution
+## What Delphi does
 
-_What did we build, and how does it work?_
+1. **Idea to tickets.** Describe a project in plain words. Claude turns it into 3-5 tickets that say *why* and what "done" means, never *how*.
+2. **Real pull requests.** You write the code and open a PR on your own GitHub repo. A GitHub App reads the diff and replies with a Socratic review: questions, a security or correctness finding, and a hint ladder (concept, then where to look, then a small snippet). It never posts the corrected code.
+3. **Comprehension gate.** Delphi asks 2-3 questions about *your* diff. A weak answer gets the next hint, not approval. Pass, and the bot approves the PR.
+4. **Progress you can show.** The dashboard tracks your skill map across the stack, and the portfolio lists approved PRs and the security flaws you found and fixed.
+
+Understanding is enforced at merge time, so it doesn't depend on which tools someone used locally. Every grade shows why, and any review, finding or grade can be flagged.
+
+## Built for trust
+
+- **Accessibility:** semantic HTML, labelled inputs, keyboard navigation with a visible focus ring, WCAG AA contrast, shadcn/ui (Radix) components.
+- **Transparency:** every AI grade and finding carries its explanation. Hints are revealed one at a time by the server, so they can't be read early in devtools.
+- **Privacy:** no emails, tokens or passwords stored. The diff is the learner's own practice-repo code.
+- **Security:** every endpoint validates a Pydantic model, every webhook's `X-Hub-Signature-256` is verified, secrets live only in `.env`.
 
 ## Tech stack
 
-_TBD_
+- **Backend:** Python 3.12, FastAPI, SQLModel + SQLite, uv
+- **AI:** Claude (`claude-opus-5-5`) through the Anthropic SDK, with structured output checked against Pydantic models
+- **GitHub:** a GitHub App for webhooks, review comments and approvals
+- **Frontend:** Vite, React, TypeScript, Tailwind, shadcn/ui, React Router
+
+## Where it goes next
+
+Levels: beginners start with no AI code generation and earn more AI help as they prove understanding. Calgary nonprofits post real work as tickets, and higher-level learners take them on. The nonprofit board in the app is a preview with made-up organisations and sample data.
 
 ## Getting started
 
@@ -25,6 +46,16 @@ _TBD_
 git clone https://github.com/n3el-k/hackthechange2026.git
 cd hackthechange2026
 ```
+
+### Quick start
+
+Once `backend/.env` is filled in (see below), one command runs everything:
+
+```bash
+./scripts/start.sh
+```
+
+It installs missing dependencies, seeds the database if there isn't one, then starts the API (http://localhost:8000), the web app (http://localhost:5173) and the smee webhook client, all in one terminal. Ctrl+C stops everything. On a first run it creates `backend/.env` from the template and stops so you can fill it in. To run each part yourself, follow the steps below.
 
 ### Backend
 
@@ -66,7 +97,7 @@ npm run gen:api    # after a change to backend/app/schemas.py: regenerate the Ty
 
 The app talks to `http://localhost:8000` by default. To point it somewhere else, set `VITE_API_URL` in `frontend/.env` (see `frontend/.env.example`).
 
-## How we work
+## How we worked
 
-- Planning lives in [plans/](plans/). Start with [plans/project-plan.md](plans/project-plan.md).
+- Planning lives in [plans/](plans/), starting with [plans/project-plan.md](plans/project-plan.md).
 - The git workflow is in [CONTRIBUTING.md](CONTRIBUTING.md).
