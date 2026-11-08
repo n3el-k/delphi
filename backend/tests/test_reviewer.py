@@ -110,3 +110,57 @@ def test_fallback_puts_the_expression_ticket_first() -> None:
     # The demo PR is written against this ticket, and "first not done" must land on it.
     assert FALLBACK_TICKETS.tickets[0].title == "Evaluate a whole expression"
     assert 3 <= len(FALLBACK_TICKETS.tickets) <= 5
+
+
+# --- Comprehension questions in the review -------------------------------------
+
+
+def _review(questions: list[reviewer.ReviewQuestion], findings: int = 1) -> reviewer.ReviewResult:
+    finding = reviewer.ReviewFinding(
+        kind="security", vuln_class="Code injection (CWE-94)", file="calculator.py", line=32,
+        explanation="eval runs any code.", socratic_question="What else would eval run?",
+        hints=reviewer.HintLadder(concept="c", where_to_look="w", snippet="s"),
+    )
+    return reviewer.ReviewResult(summary="s", findings=[finding] * findings, questions=questions, policy_flags=[])
+
+
+def _question(index: int | None = None) -> reviewer.ReviewQuestion:
+    return reviewer.ReviewQuestion(text="Why?", file="calculator.py", line=1, finding_index=index)
+
+
+TICKET = reviewer.TicketContext(title="t", why="w", acceptance_criteria=["a"])
+
+
+def test_review_keeps_at_most_three_questions(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(reviewer, "_parse", lambda *a, **k: _review([_question()] * 5))
+    assert len(reviewer.review_diff("diff", TICKET).questions) == reviewer.MAX_QUESTIONS
+
+
+def test_a_question_pointing_at_no_finding_is_unlinked(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(reviewer, "_parse", lambda *a, **k: _review([_question(0), _question(7)]))
+    assert [q.finding_index for q in reviewer.review_diff("diff", TICKET).questions] == [0, None]
+
+
+def test_a_review_without_questions_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(reviewer, "_parse", lambda *a, **k: _review([]))
+    with pytest.raises(ReviewerError):
+        reviewer.review_diff("diff", TICKET)
+
+
+def test_the_previous_push_findings_go_in_the_prompt(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen = {}
+
+    def parse(system, messages, *args, **kwargs):
+        seen["prompt"] = messages[0]["content"]
+        return _review([_question()])
+
+    monkeypatch.setattr(reviewer, "_parse", parse)
+    previous = reviewer.PreviousFinding(
+        kind="security", vuln_class="Code injection (CWE-94)", file="calculator.py", line=32, explanation="eval runs any code."
+    )
+    reviewer.review_diff("diff", TICKET, [previous])
+    assert "<previous_review>" in seen["prompt"]
+    assert "Code injection (CWE-94) at calculator.py:32" in seen["prompt"]
+
+    reviewer.review_diff("diff", TICKET)
+    assert "<previous_review>" not in seen["prompt"]

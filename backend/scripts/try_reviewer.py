@@ -43,6 +43,9 @@ def main():
         classes = [f.vuln_class or f.kind for f in review.findings]
         print("\nFindings:", classes)
         print("Caught code injection:", any("94" in c or "injection" in c.lower() for c in classes))
+        print(f"Questions ({len(review.questions)}):")
+        for q in review.questions:
+            print(f"  - [{q.file}:{q.line}, finding {q.finding_index}] {q.text}")
 
 
 if __name__ == "__main__":
