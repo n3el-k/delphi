@@ -88,7 +88,7 @@ export default function NonprofitsPage() {
           Build for Calgary nonprofits.
         </h1>
         <p className="mt-4 max-w-prose text-white/85">
-          Local nonprofits post real work as tickets. Learners who reach Level 3 take them on, and Delphi's reviewer
+          Local nonprofits post real work as tickets. Learners who've passed reviews on their own projects take them on, and Delphi's reviewer
           checks every pull request before it ships. Nonprofits get software they couldn't afford, and learners get real
           clients for their portfolio.
         </p>
@@ -103,7 +103,7 @@ export default function NonprofitsPage() {
           </li>
           <li className="flex items-center gap-2">
             <Lock aria-hidden="true" className="size-5 text-peach" />
-            Opens to learners at Level 3
+            For learners with approved work
           </li>
         </ul>
       </section>
@@ -154,7 +154,7 @@ export default function NonprofitsPage() {
                     <span className="text-muted-foreground">{c.size}</span>
                     <span className="flex items-center gap-1.5 rounded-full bg-peach px-2.5 py-0.5 text-xs font-medium">
                       <Lock aria-hidden="true" className="size-3" />
-                      Level 3 and up
+                      After 3 approved PRs
                     </span>
                   </div>
                 </div>
