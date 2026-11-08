@@ -53,8 +53,8 @@ Next: test the whole app end to end once Param's `POST /api/projects` and screen
 
 ### M4: Polish + submit
 
-- [ ] Security check of our own repo: no secrets in history, every endpoint validated
-- [ ] Backend setup steps in the README
+- [x] Security check of our own repo: no secrets in history, every endpoint validated. Every `.env` value and the private key checked against all branches' history: none found. `*.pem` and `*.db` added to `.gitignore`. Every endpoint takes a Pydantic model or bounded int ids (the webhook validates after its signature check). Fixed in #12: ids over 2⁶³ overflowed SQLite and returned a 500
+- [x] Backend setup steps in the README
 - [ ] Demo video and Devpost, with Param
 
 ## Blocked / need from Param
@@ -69,7 +69,7 @@ Next: test the whole app end to end once Param's `POST /api/projects` and screen
 - [x] Add `anthropic_api_key` to `config.Settings` and pass it to `anthropic.Anthropic(api_key=...)`, so a plain `uv run fastapi dev` server finds the key in `.env`
 - [x] Replace the `SkillAreaName` Literal in `reviewer.py` with `models.SkillArea`
 - [x] Map `ReviewResult` onto `Review` + `Finding` rows (`hints` = `[concept, where_to_look, snippet]`) ~~and `TicketSet` onto `Project` + `Ticket`~~ Review side done in the webhook PR. Tickets are Param's `POST /api/projects`
-- [ ] Run `scripts/try_reviewer.py` with plain `uv run python -m scripts.try_reviewer` (it now takes the demo ticket from `FALLBACK_TICKETS`, since there's no seeded project any more)
+- [x] Run `scripts/try_reviewer.py` with plain `uv run python -m scripts.try_reviewer`. Works with `ANTHROPIC_API_KEY` unset in the shell, so the key comes from settings: 5 real tickets in 14.9s, the expression ticket first
 - [x] Add the run and test commands to the Commands section of CLAUDE.md
 
 ## Notes
