@@ -1,4 +1,4 @@
-"""Neel's comprehension gate endpoints: /api/gates/{id}.
+"""Neel's comprehension gate endpoints: /api/gates/{id}, and flagging a review.
 
 A gate belongs to one PR. It always shows the latest push: that push's review, findings
 and questions. Earlier pushes' questions and answers stay in the DB as history.
@@ -8,13 +8,16 @@ import logging
 import re
 from concurrent.futures import ThreadPoolExecutor
 
-from fastapi import APIRouter, Depends, HTTPException
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, HTTPException, Path
 from sqlmodel import Session, col, select
 
 from app.db import get_session
 from app.models import (
     Answer,
     Finding,
+    Flag,
     FindingKind,
     Gate,
     GateStatus,
@@ -30,13 +33,19 @@ from app.schemas import (
     AnswersIn,
     AnswersOut,
     FindingOut,
+    FlagIn,
+    FlagOut,
     GateOut,
+    MAX_DB_ID,
     GateReviewOut,
     QuestionOut,
 )
 from app.services import github, progress, reviewer
 
 logger = logging.getLogger(__name__)
+
+# Path ids get the same bounds as body ids (see schemas.DbId).
+PathId = Annotated[int, Path(ge=1, le=MAX_DB_ID)]
 
 router = APIRouter(prefix="/api", tags=["gates"])
 
@@ -75,7 +84,7 @@ def last_answer(session: Session, question_id: int) -> Answer | None:
 
 
 @router.get("/gates/{gate_id}")
-def read_gate(gate_id: int, session: Session = Depends(get_session)) -> GateOut:
+def read_gate(gate_id: PathId, session: Session = Depends(get_session)) -> GateOut:
     gate, submission = get_gate(session, gate_id)
     ticket = session.get(Ticket, submission.ticket_id)
     assert ticket is not None
@@ -107,6 +116,7 @@ def read_gate(gate_id: int, session: Session = Depends(get_session)) -> GateOut:
                     file=q.file,
                     line=q.line,
                     last_answer=AnswerOut(
+                        id=answer.id,  # type: ignore[arg-type]
                         text=answer.text,
                         score=answer.score,
                         passed=answer.passed,
@@ -135,7 +145,7 @@ def read_gate(gate_id: int, session: Session = Depends(get_session)) -> GateOut:
 
 
 @router.post("/gates/{gate_id}/answers")
-def submit_answers(gate_id: int, body: AnswersIn, session: Session = Depends(get_session)) -> AnswersOut:
+def submit_answers(gate_id: PathId, body: AnswersIn, session: Session = Depends(get_session)) -> AnswersOut:
     """Grade a batch of answers. Pass every question on the latest push and the PR is approved.
 
     A plain `def`, not `async def`: grading blocks on Claude, so FastAPI runs it in a thread.
@@ -182,15 +192,15 @@ def submit_answers(gate_id: int, body: AnswersIn, session: Session = Depends(get
     for a, grade in zip(body.answers, grades):
         passed = grade.score >= reviewer.PASS_SCORE
         next_hint = None if passed else _next_hint(by_id.get(questions[a.question_id].finding_id), grade.next_hint)
-        session.add(
-            Answer(
-                question_id=a.question_id, text=a.text, score=grade.score, passed=passed,
-                explanation=grade.explanation, next_hint=next_hint,
-            )
+        row = Answer(
+            question_id=a.question_id, text=a.text, score=grade.score, passed=passed,
+            explanation=grade.explanation, next_hint=next_hint,
         )
+        session.add(row)
+        session.flush()  # gives the answer its id for the response
         results.append(
             AnswerResult(
-                question_id=a.question_id, score=grade.score, passed=passed,
+                question_id=a.question_id, answer_id=row.id, score=grade.score, passed=passed,  # type: ignore[arg-type]
                 explanation=grade.explanation, next_hint=next_hint,
             )
         )
@@ -264,3 +274,39 @@ def _resolve_fixed_findings(session: Session, submission_id: int, latest: Review
         seen.add(key)
         f.resolved = True
         session.add(f)
+
+
+# --- POST /api/reviews/{id}/flag -----------------------------------------------
+
+
+@router.post("/reviews/{review_id}/flag", status_code=201)
+def flag_review(review_id: PathId, body: FlagIn, session: Session = Depends(get_session)) -> FlagOut:
+    """The learner disagrees with the AI: the whole review, one finding, or one grade.
+
+    A flag is stored for a person to look at. It never changes a score, reopens a gate or
+    touches GitHub, so it can't become a way around the gate. It works after a pass too.
+    """
+    review = session.get(Review, review_id)
+    if review is None:
+        raise HTTPException(status_code=404, detail="Review not found")
+
+    if body.finding_id is not None:
+        finding = session.get(Finding, body.finding_id)
+        if finding is None or finding.review_id != review.id:
+            raise HTTPException(status_code=422, detail="That finding isn't part of this review.")
+
+    if body.answer_id is not None:
+        # An answer belongs to a question on a gate. It has to be this review's PR's gate.
+        answer = session.get(Answer, body.answer_id)
+        question = session.get(Question, answer.question_id) if answer else None
+        gate = session.get(Gate, question.gate_id) if question else None
+        if gate is None or gate.submission_id != review.submission_id:
+            raise HTTPException(status_code=422, detail="That answer isn't from this review's pull request.")
+
+    flag = Flag(review_id=review.id, finding_id=body.finding_id, answer_id=body.answer_id, reason=body.reason)  # type: ignore[arg-type]
+    session.add(flag)
+    session.commit()
+    session.refresh(flag)
+    # The id only: the reason is the learner's own words and stays out of the logs.
+    logger.info("Review %s flagged (flag %s)", review.id, flag.id)
+    return FlagOut(id=flag.id, created_at=flag.created_at)  # type: ignore[arg-type]

@@ -18,6 +18,7 @@ from app.models import (
     Answer,
     Finding,
     FindingKind,
+    Flag,
     Gate,
     GateStatus,
     Project,
@@ -242,8 +243,9 @@ def test_a_weak_answer_fails_with_a_hint_and_nothing_is_approved(
     body = answer(client, gate, (questions[0], "a good answer"), (questions[1], "dunno")).json()
     assert body["passed"] is False
     weak = body["results"][1]
+    assert weak["answer_id"] == session.exec(select(Answer).where(Answer.question_id == questions[1].id)).one().id
     assert weak == {
-        "question_id": questions[1].id, "score": 40, "passed": False,
+        "question_id": questions[1].id, "answer_id": weak["answer_id"], "score": 40, "passed": False,
         "explanation": "Too vague.", "next_hint": "Think about what the user can type.",
     }
     assert body["results"][0]["next_hint"] is None
@@ -343,3 +345,141 @@ def test_a_grading_failure_saves_nothing(
     _, _, questions = add_push(session, gate, "def456", security=False)
     assert answer(client, gate, (questions[0], "a good answer")).status_code == 503
     assert session.exec(select(Answer)).all() == []
+
+
+# --- POST /api/reviews/{id}/flag -----------------------------------------------
+
+
+def add_answer(session: Session, question: Question, score: int = 40) -> Answer:
+    row = Answer(
+        question_id=question.id, text="My answer.", score=score, passed=score >= 70,  # type: ignore[arg-type]
+        explanation="Because.", next_hint=None,
+    )
+    session.add(row)
+    session.commit()
+    return row
+
+
+def other_pr_gate(session: Session, gate: Gate) -> Gate:
+    """A second PR on the same ticket, with its own gate."""
+    first = session.get(Submission, gate.submission_id)
+    assert first is not None
+    submission = Submission(
+        learner_id=first.learner_id, ticket_id=first.ticket_id, repo_full_name=first.repo_full_name, pr_number=2,
+        pr_url="https://github.com/n3el-k/practice/pull/2", head_sha="fff000", diff="+ x",
+    )
+    session.add(submission)
+    session.flush()
+    other = Gate(submission_id=submission.id)  # type: ignore[arg-type]
+    session.add(other)
+    session.commit()
+    return other
+
+
+def flag(client: TestClient, review_id: int, **body):
+    return client.post(f"/api/reviews/{review_id}/flag", json={"reason": "I think this is wrong.", **body})
+
+
+def test_flag_the_whole_review(client: TestClient, session: Session, gate: Gate) -> None:
+    review, _, _ = add_push(session, gate, "abc123")
+    response = flag(client, review.id)  # type: ignore[arg-type]
+    assert response.status_code == 201
+    body = response.json()
+    row = session.get(Flag, body["id"])
+    assert row is not None and row.review_id == review.id
+    assert row.finding_id is None and row.answer_id is None
+    assert row.reason == "I think this is wrong."
+    assert "created_at" in body
+
+
+def test_flag_a_finding(client: TestClient, session: Session, gate: Gate) -> None:
+    review, [finding], _ = add_push(session, gate, "abc123")
+    response = flag(client, review.id, finding_id=finding.id)  # type: ignore[arg-type]
+    assert response.status_code == 201
+    assert session.get(Flag, response.json()["id"]).finding_id == finding.id  # type: ignore[union-attr]
+
+
+def test_flag_a_grade(client: TestClient, session: Session, gate: Gate) -> None:
+    review, _, questions = add_push(session, gate, "def456", security=False)
+    graded = add_answer(session, questions[0])
+    response = flag(client, review.id, answer_id=graded.id)  # type: ignore[arg-type]
+    assert response.status_code == 201
+    assert session.get(Flag, response.json()["id"]).answer_id == graded.id  # type: ignore[union-attr]
+
+
+def test_a_grade_from_an_earlier_push_of_the_same_pr_can_be_flagged(
+    client: TestClient, session: Session, gate: Gate
+) -> None:
+    _, _, old = add_push(session, gate, "abc123", security=False)
+    graded = add_answer(session, old[0])
+    latest, _, _ = add_push(session, gate, "def456", security=False)
+    assert flag(client, latest.id, answer_id=graded.id).status_code == 201  # type: ignore[arg-type]
+
+
+def test_a_finding_from_another_review_is_rejected(client: TestClient, session: Session, gate: Gate) -> None:
+    _, [old_finding], _ = add_push(session, gate, "abc123")
+    latest, _, _ = add_push(session, gate, "def456", security=False)
+    assert flag(client, latest.id, finding_id=old_finding.id).status_code == 422  # type: ignore[arg-type]
+    assert flag(client, latest.id, finding_id=9999).status_code == 422  # type: ignore[arg-type]
+
+
+def test_an_answer_from_another_pr_is_rejected(client: TestClient, session: Session, gate: Gate) -> None:
+    review, _, _ = add_push(session, gate, "abc123", security=False)
+    other = other_pr_gate(session, gate)
+    _, _, other_questions = add_push(session, other, "fff000", security=False)
+    graded = add_answer(session, other_questions[0])
+    assert flag(client, review.id, answer_id=graded.id).status_code == 422  # type: ignore[arg-type]
+    assert flag(client, review.id, answer_id=9999).status_code == 422  # type: ignore[arg-type]
+
+
+def test_flagging_an_unknown_review_is_404(client: TestClient) -> None:
+    assert flag(client, 9999).status_code == 404
+
+
+def test_the_reason_is_validated(client: TestClient, session: Session, gate: Gate) -> None:
+    review, _, _ = add_push(session, gate, "abc123")
+    for reason in ("", "   ", "x" * 1001):
+        response = client.post(f"/api/reviews/{review.id}/flag", json={"reason": reason})
+        assert response.status_code == 422, reason
+    response = client.post(f"/api/reviews/{review.id}/flag", json={"reason": "  Too harsh.  "})
+    assert session.get(Flag, response.json()["id"]).reason == "Too harsh."  # type: ignore[union-attr]
+
+
+def test_a_flag_changes_nothing_else(client: TestClient, session: Session, gate: Gate, fakes: dict) -> None:
+    # Flagging after a pass works, and leaves the grade, the gate and GitHub alone.
+    review, _, questions = add_push(session, gate, "def456", security=False)
+    answer(client, gate, *[(q, "a good answer") for q in questions])
+    graded = session.exec(select(Answer)).first()
+    assert graded is not None
+    approvals = list(fakes["approved"])
+
+    assert flag(client, review.id, answer_id=graded.id).status_code == 201  # type: ignore[arg-type]
+    session.expire_all()
+    assert session.get(Answer, graded.id).score == 90  # type: ignore[union-attr]
+    assert session.get(Gate, gate.id).status == GateStatus.passed  # type: ignore[union-attr]
+    assert fakes["approved"] == approvals
+
+
+def test_answer_ids_from_both_responses_can_be_flagged(
+    client: TestClient, session: Session, gate: Gate, fakes: dict
+) -> None:
+    review, _, questions = add_push(session, gate, "def456", security=False)
+    posted = answer(client, gate, (questions[0], "dunno")).json()["results"][0]["answer_id"]
+    shown = client.get(f"/api/gates/{gate.id}").json()["questions"][0]["last_answer"]["id"]
+    assert posted == shown
+    assert flag(client, review.id, answer_id=shown).status_code == 201  # type: ignore[arg-type]
+
+
+# --- Ids out of range ------------------------------------------------------------
+
+
+@pytest.mark.parametrize("bad", [0, -1, 2**63, 10**20])
+def test_ids_out_of_range_are_422_not_500(client: TestClient, session: Session, gate: Gate, bad: int) -> None:
+    # Found in the security check: an id over 2**63 overflowed SQLite and came back as a 500.
+    review, _, questions = add_push(session, gate, "def456", security=False)
+    assert client.get(f"/api/gates/{bad}").status_code == 422
+    assert client.post(f"/api/gates/{bad}/answers", json={"answers": [{"question_id": 1, "text": "x"}]}).status_code == 422
+    assert client.post(f"/api/reviews/{bad}/flag", json={"reason": "x"}).status_code == 422
+    assert client.post(f"/api/gates/{gate.id}/answers", json={"answers": [{"question_id": bad, "text": "x"}]}).status_code == 422
+    for field in ("finding_id", "answer_id"):
+        assert client.post(f"/api/reviews/{review.id}/flag", json={"reason": "x", field: bad}).status_code == 422
