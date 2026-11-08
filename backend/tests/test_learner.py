@@ -13,6 +13,7 @@ from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, col, create_engine, func, select
 
 import app.models  # noqa: F401  (registers the tables)
+from app.config import settings
 from app.db import get_session
 from app.main import app
 from app.models import (
@@ -150,7 +151,7 @@ def pass_ticket(
 
 def test_me(client: TestClient) -> None:
     body = client.get("/api/me").json()
-    assert body == {"name": "Param Mehta", "github_login": "param-m1"}
+    assert body == {"name": "Demo learner", "github_login": settings.demo_learner_github_login}
 
 
 def statuses(body: dict) -> list[str]:

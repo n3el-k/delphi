@@ -55,7 +55,16 @@ Rerun `uv run python -m app.seed` after pulling a change to `backend/app/models.
 
 ### Frontend
 
-_Coming soon._
+You need Node 20+. Start the backend first.
+
+```bash
+cd frontend
+npm install
+npm run dev        # app on http://localhost:5173
+npm run gen:api    # after a change to backend/app/schemas.py: regenerate the TypeScript types
+```
+
+The app talks to `http://localhost:8000` by default. To point it somewhere else, set `VITE_API_URL` in `frontend/.env` (see `frontend/.env.example`).
 
 ## How we work
 
