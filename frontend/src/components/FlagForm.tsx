@@ -1,5 +1,5 @@
 import { Flag } from 'lucide-react'
-import { useId, useState, type FormEvent } from 'react'
+import { useId, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
@@ -28,8 +28,7 @@ export default function FlagForm({ reviewId, findingId, answerId, what }: Props)
   // A unique id per form, so each label points at its own textarea
   const id = useId()
 
-  async function submit(event: FormEvent) {
-    event.preventDefault()
+  async function send() {
     setSending(true)
     setError(undefined)
     try {
@@ -66,7 +65,9 @@ export default function FlagForm({ reviewId, findingId, answerId, what }: Props)
         Flag {what}
       </Button>
       {open && (
-        <form id={`${id}-form`} onSubmit={submit} className="space-y-2 rounded-lg border p-3">
+        // A group, not a <form>: this sits inside the gate's answers form, and HTML doesn't
+        // allow a form inside a form (its Send button would submit the answers instead).
+        <div role="group" aria-label={`Flag ${what}`} id={`${id}-form`} className="space-y-2 rounded-lg border p-3">
           <Label htmlFor={`${id}-reason`}>Why do you disagree?</Label>
           <Textarea
             id={`${id}-reason`}
@@ -82,14 +83,14 @@ export default function FlagForm({ reviewId, findingId, answerId, what }: Props)
             </p>
           )}
           <div className="flex gap-2">
-            <Button type="submit" size="sm" disabled={sending || reason.trim() === ''}>
+            <Button type="button" size="sm" onClick={send} disabled={sending || reason.trim() === ''}>
               {sending ? 'Sending…' : 'Send flag'}
             </Button>
             <Button type="button" size="sm" variant="outline" onClick={() => setOpen(false)}>
               Cancel
             </Button>
           </div>
-        </form>
+        </div>
       )}
     </div>
   )
