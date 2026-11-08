@@ -4,6 +4,7 @@ import DashboardPage from '@/pages/DashboardPage'
 import GatePage from '@/pages/GatePage'
 import HelpPage from '@/pages/HelpPage'
 import NewProjectPage from '@/pages/NewProjectPage'
+import NonprofitsPage from '@/pages/NonprofitsPage'
 import NotFoundPage from '@/pages/NotFoundPage'
 import PortfolioPage from '@/pages/PortfolioPage'
 
@@ -18,6 +19,7 @@ export default function App() {
           {/* The bot's PR comment links here: backend/app/routers/webhooks.py builds the URL */}
           <Route path="/gates/:id" element={<GatePage />} />
           <Route path="/portfolio" element={<PortfolioPage />} />
+          <Route path="/nonprofits" element={<NonprofitsPage />} />
           <Route path="/help" element={<HelpPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Route>

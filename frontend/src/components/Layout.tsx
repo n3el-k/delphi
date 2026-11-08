@@ -8,6 +8,7 @@ const links = [
   { to: '/', label: 'Dashboard', end: true },
   { to: '/projects/new', label: 'New project', end: false },
   { to: '/portfolio', label: 'Portfolio', end: false },
+  { to: '/nonprofits', label: 'Nonprofits', end: false },
   { to: '/help', label: 'Help', end: false },
 ]
 
