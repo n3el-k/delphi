@@ -113,3 +113,15 @@ def post_comment(repo_full_name: str, pr_number: int, body: str) -> int:
     # PRs are issues on GitHub's side, so PR conversation comments go through the issues API.
     response = _request("POST", f"/repos/{repo_full_name}/issues/{pr_number}/comments", json={"body": body})
     return response.json()["id"]
+
+
+def approve_pr(repo_full_name: str, pr_number: int, head_sha: str, body: str) -> None:
+    """Approve the PR as the bot, pinned to the commit the learner explained.
+
+    commit_id means the approval is for that exact code: a later push isn't pre-approved.
+    """
+    _request(
+        "POST",
+        f"/repos/{repo_full_name}/pulls/{pr_number}/reviews",
+        json={"commit_id": head_sha, "event": "APPROVE", "body": body},
+    )
