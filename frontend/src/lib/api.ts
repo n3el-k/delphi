@@ -26,8 +26,8 @@ export type Portfolio = Schemas['PortfolioOut']
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000'
 
-// Reads finish fast. Writes can wait on Claude: tickets take ~15s (up to ~40s with the
-// fallback), and grading three answers takes about as long as grading one.
+// Reads finish fast. Writes can wait on Claude: tickets take ~15s (up to ~40s with a
+// timeout and a retry), and grading three answers takes about as long as grading one.
 const READ_TIMEOUT_MS = 15_000
 const WRITE_TIMEOUT_MS = 90_000
 

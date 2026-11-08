@@ -133,7 +133,7 @@ def read_gate(gate_id: PathId, session: Session = Depends(get_session)) -> GateO
         status=gate.status,
         pr_url=submission.pr_url,
         ticket_title=ticket.title,
-        review=GateReviewOut(id=review.id, summary=review.summary, is_fallback=review.is_fallback)  # type: ignore[arg-type]
+        review=GateReviewOut(id=review.id, summary=review.summary)  # type: ignore[arg-type]
         if review
         else None,
         findings=findings,

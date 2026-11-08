@@ -61,7 +61,6 @@ class Project(SQLModel, table=True):
     title: str
     description: str  # Claude's summary of the idea, shown on the dashboard (at most 500 characters)
     repo_full_name: str  # the learner's GitHub repo, "owner/name"
-    is_fallback: bool = False  # True when these are the cached example tickets, not Claude's
 
 
 class Ticket(SQLModel, table=True):
@@ -118,7 +117,6 @@ class Review(SQLModel, table=True):
     summary: str
     policy_flags: list[str] = Field(default_factory=list, sa_column=Column(JSON, nullable=False))
     github_comment_id: int | None = None
-    is_fallback: bool = False
     created_at: datetime = Field(default_factory=_now)
 
 

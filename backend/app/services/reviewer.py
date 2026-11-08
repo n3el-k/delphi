@@ -26,11 +26,11 @@ MODEL = "claude-opus-5-5"
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
 
 # Seconds per attempt. The SDK retries once (timeouts, connection errors, 429 and
-# 5xx), so the worst case is about twice this before the caller's fallback kicks in.
+# 5xx), so the worst case is about twice this before the caller gets a ReviewerError.
 # Reviewing a small diff takes ~30s, so it gets the longer limit.
 TIMEOUT_SECONDS = 60.0
 # Tickets take ~15s. The learner is watching a spinner, so this one is shorter:
-# with the retry, at most ~40s before the example tickets show.
+# with the retry, at most ~40s before the learner is asked to try again.
 TICKETS_TIMEOUT_SECONDS = 20.0
 
 # A hint snippet longer than this is getting close to "the corrected code".
@@ -83,15 +83,11 @@ class TicketSet(BaseModel):
 
 
 class TicketResult(TicketSet):
-    """What generate_tickets returns. Not sent to Claude, so Claude never sets the flag."""
+    """What generate_tickets returns: Claude's tickets with the summary trimmed."""
 
     # A hard cap so the dashboard card has a predictable size. generate_tickets
     # trims to it, so this never fails on Claude's output.
     description: str = Field(max_length=MAX_SUMMARY_CHARS)
-
-    # True when Claude was unavailable and these are the cached example tickets.
-    # The UI says so and offers "Try again".
-    is_fallback: bool
 
 
 class HintLadder(BaseModel):
@@ -276,80 +272,6 @@ next_hint: if the score is below {PASS_SCORE}, one plain-words hint pointing at 
 itself, and never corrected code. Leave it empty otherwise."""
 
 
-# --- Fallbacks ------------------------------------------------------------------
-# Known-good output for when Claude is unavailable during judging. The first
-# ticket is the one the demo PR (the eval() trap) is written against.
-# These name functions (evaluate(), divide(), CalculatorError), which the tickets
-# prompt forbids. That's deliberate: the demo repo already has those functions,
-# and the criteria have to match the code the demo PR changes.
-
-FALLBACK_TICKETS = TicketSet(
-    project_title="Calculator",
-    description=(
-        "A command-line calculator for anyone who wants to type a whole sum, like "
-        "2 + 3 * 4, and get the answer a maths teacher would give. I assumed it runs "
-        "in the terminal, reads one expression at a time, and should never crash on "
-        "bad input."
-    ),
-    tickets=[
-        TicketDraft(
-            title="Evaluate a whole expression",
-            why=(
-                "People want to type a whole sum like 2 + 3 * 4 instead of calling one "
-                "operation at a time, and get the answer a maths teacher would give."
-            ),
-            acceptance_criteria=[
-                "evaluate('2 + 3 * 4') returns 14, following the order of operations",
-                "Brackets and decimals work",
-                "Empty or invalid input gives a clear CalculatorError, never a crash",
-                "Dividing by zero gives the same clear error as divide()",
-            ],
-            skill_areas=["backend", "security", "debugging"],
-        ),
-        TicketDraft(
-            title="Prove the calculator works with tests",
-            why=(
-                "A calculator people can't trust is worse than none. Tests catch the "
-                "next change that quietly breaks a sum you already got right."
-            ),
-            acceptance_criteria=[
-                "Running the tests checks order of operations, brackets and decimals",
-                "There's a test for each kind of input that should give an error",
-                "Breaking evaluate() on purpose makes at least one test fail",
-            ],
-            skill_areas=["testing", "debugging"],
-        ),
-        TicketDraft(
-            title="Keep a history of past calculations",
-            why=(
-                "People often need an answer they worked out a few minutes ago, even "
-                "after closing the calculator."
-            ),
-            acceptance_criteria=[
-                "Each expression and its result is kept, newest first",
-                "The history is still there after closing and reopening the calculator",
-                "A missing or corrupted history file doesn't crash the calculator",
-                "Loading the history never runs anything stored in it",
-            ],
-            skill_areas=["database", "security"],
-        ),
-        TicketDraft(
-            title="Use the last answer in the next sum",
-            why=(
-                "Long calculations happen in steps. Retyping the previous answer is slow "
-                "and invites typos."
-            ),
-            acceptance_criteria=[
-                "Typing 'ans' in an expression uses the previous result, e.g. 'ans * 2'",
-                "Using 'ans' before any calculation gives a clear error",
-                "An expression that fails leaves the previous 'ans' unchanged",
-            ],
-            skill_areas=["backend", "debugging"],
-        ),
-    ],
-)
-
-
 # --- Calls ----------------------------------------------------------------------
 
 logger = logging.getLogger(__name__)
@@ -396,7 +318,7 @@ def _parse(
     except anthropic.APIStatusError as e:
         if e.status_code in _OUR_FAULT_STATUSES:
             # A bad key or a bad request won't fix itself, so make it loud, not just
-            # a fallback. Only the status goes in the log, never the key.
+            # a warning. Only the status goes in the log, never the key.
             logger.error("Claude API error %s: check the API key and the request", e.status_code)
         raise ReviewerError(f"Claude API error {e.status_code}") from e
     except anthropic.APIConnectionError as e:
@@ -432,28 +354,18 @@ def _tickets_from_claude(idea: str) -> TicketSet:
 def generate_tickets(idea: str) -> TicketResult:
     """Turn a learner's project idea into 3-5 tickets: the why, never the how.
 
-    Never raises for a Claude problem: if Claude is slow, down or declines, it
-    returns the cached calculator tickets with is_fallback=True, so the demo
-    always has a project to work on.
+    Raises ReviewerError if Claude is slow, down, declines or answers badly. There
+    are no cached tickets: the caller tells the learner to try again.
     """
     try:
         result = _tickets_from_claude(idea)
     except ReviewerError as e:
         # The message is ours (no key or request content), so it's safe to log.
-        logger.warning("generate_tickets fell back to the cached tickets: %s", e)
-        return _fallback()
-    except Exception:
-        # Last resort: this function promises never to raise for a Claude problem,
-        # so an error we didn't foresee still gives the demo its tickets.
-        logger.exception("generate_tickets hit an unexpected error, using the cached tickets")
-        return _fallback()
+        logger.warning("generate_tickets failed: %s", e)
+        raise
     data = result.model_dump()
     data["description"] = _trim_summary(data["description"])
-    return TicketResult(**data, is_fallback=False)
-
-
-def _fallback() -> TicketResult:
-    return TicketResult(**FALLBACK_TICKETS.model_dump(), is_fallback=True)
+    return TicketResult(**data)
 
 
 def _trim_summary(text: str) -> str:

@@ -105,8 +105,8 @@ def create_project(
 
     # 2. Ask Claude (or the fake, in tests) for a title, a summary and the tickets.
     #    Done before writing anything, so nothing is half-saved while Claude thinks.
-    #    If Claude is down, generate_tickets raises ReviewerError (once Neel removes his
-    #    fallback): tell the learner to try again instead of failing with a bare 500.
+    #    If Claude is down, generate_tickets raises ReviewerError: tell the learner to
+    #    try again instead of failing with a bare 500.
     try:
         result = generate_tickets(body.idea)
     except reviewer.ReviewerError:
@@ -120,7 +120,6 @@ def create_project(
         title=result.project_title,
         description=result.description,
         repo_full_name=body.repo_full_name,
-        is_fallback=result.is_fallback,
     )
     session.add(project)
     session.flush()
@@ -154,7 +153,6 @@ def _project_out(project: Project, tickets: list[Ticket]) -> ProjectOut:
         id=project.id,  # type: ignore[arg-type]
         title=project.title,
         description=project.description,
-        is_fallback=project.is_fallback,
         tickets=[
             TicketBase(id=t.id, title=t.title, why=t.why, acceptance_criteria=t.acceptance_criteria)  # type: ignore[arg-type]
             for t in tickets

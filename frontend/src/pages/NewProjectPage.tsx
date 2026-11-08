@@ -1,4 +1,4 @@
-import { CircleAlert, Info } from 'lucide-react'
+import { CircleAlert } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { Link } from 'react-router'
 import TicketCard from '@/components/TicketCard'
@@ -99,19 +99,6 @@ export default function NewProjectPage() {
             </h2>
             <p className="text-muted-foreground">{project.description}</p>
           </div>
-
-          {project.is_fallback && (
-            <Alert>
-              <Info aria-hidden="true" />
-              <AlertTitle>These are example tickets</AlertTitle>
-              <AlertDescription>
-                <p>The AI couldn't be reached, so these are ready-made tickets for a calculator.</p>
-                <Button size="sm" variant="outline" className="mt-2" onClick={() => create()} disabled={creating}>
-                  Try again
-                </Button>
-              </AlertDescription>
-            </Alert>
-          )}
 
           <ol className="space-y-4">
             {project.tickets.map((ticket) => (

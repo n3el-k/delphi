@@ -68,7 +68,6 @@ class DashboardOut(BaseModel):
 class GateReviewOut(BaseModel):
     id: int
     summary: str
-    is_fallback: bool
 
 
 class FindingOut(BaseModel):
@@ -220,6 +219,4 @@ class ProjectOut(BaseModel):
     title: str
     # Claude's one-paragraph summary of how it understood the idea (at most 500 characters)
     description: str
-    # True when Claude was unavailable and these are the cached example tickets
-    is_fallback: bool
     tickets: list[TicketBase]

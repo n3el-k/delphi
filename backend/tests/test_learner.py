@@ -61,7 +61,6 @@ FAKE_TICKETS = TicketResult(
             skill_areas=[SkillArea.frontend, SkillArea.debugging],
         ),
     ],
-    is_fallback=False,
 )
 
 
@@ -354,10 +353,9 @@ def test_create_project_saves_it_and_returns_201(client: TestClient, session: Se
     r = client.post("/api/projects", json={"idea": "  A habit tracker for students  ", "repo_full_name": "param-m1/habits"})
     assert r.status_code == 201
     body = r.json()
-    assert set(body) == {"id", "title", "description", "is_fallback", "tickets"}  # matches the contract exactly
+    assert set(body) == {"id", "title", "description", "tickets"}  # matches the contract exactly
     assert body["title"] == "Habit tracker"
     assert body["description"] == FAKE_TICKETS.description
-    assert body["is_fallback"] is False
     assert [t["title"] for t in body["tickets"]] == ["Add a habit", "Mark a habit done for today", "Show the current streak"]
     assert all(set(t) == {"id", "title", "why", "acceptance_criteria"} for t in body["tickets"])  # no status here
 
@@ -399,15 +397,17 @@ def test_bad_input_is_rejected_before_claude(client: TestClient, session: Sessio
     assert count(session, Project) == 0
 
 
-def test_try_again_after_fallback_calls_claude(client: TestClient, session: Session) -> None:
-    """Neel's case: Claude stalled, the learner got example tickets and clicks Try again."""
-    use_generator(lambda idea: FAKE_TICKETS.model_copy(update={"is_fallback": True}))
-    first = client.post("/api/projects", json=GOOD_BODY).json()
-    assert first["is_fallback"] is True
+def test_try_again_after_a_failure_calls_claude(client: TestClient, session: Session) -> None:
+    """Neel's case: Claude stalled, the learner got "try again" and submits the idea again."""
+
+    def claude_is_down(idea: str) -> TicketResult:
+        raise ReviewerError("Claude timed out")
+
+    use_generator(claude_is_down)
+    assert client.post("/api/projects", json=GOOD_BODY).status_code == 503
     calls = use_generator(lambda idea: FAKE_TICKETS)  # Claude is back
     again = client.post("/api/projects", json=GOOD_BODY)
     assert again.status_code == 201
-    assert again.json()["is_fallback"] is False
     assert len(calls) == 1  # Claude really was asked again
     body = client.get("/api/dashboard").json()
     assert body["current_project"]["id"] == again.json()["id"]  # the real tickets are what the learner sees
@@ -430,11 +430,3 @@ def test_claude_failing_returns_503_and_saves_nothing(client: TestClient, sessio
     assert r.json() == {"detail": "Couldn't create tickets right now. Try again in a minute."}
     assert "timed out" not in r.text  # the internal reason stays on the server
     assert count(session, Project) == 0
-
-
-def test_fallback_tickets_are_marked_as_such(client: TestClient, session: Session) -> None:
-    use_generator(lambda idea: FAKE_TICKETS.model_copy(update={"is_fallback": True}))
-    body = client.post("/api/projects", json=GOOD_BODY).json()
-    assert body["is_fallback"] is True
-    project = session.get(Project, body["id"])
-    assert project is not None and project.is_fallback is True  # survives a reload
