@@ -8,27 +8,28 @@ The GitHub + AI pipeline: everything that talks to GitHub or Claude. I meet Para
 
 ## Now
 
-M0: Param is reworking PR #2 for the no-levels scope. Meanwhile, set up the GitHub App and the Claude key.
+M1: `reviewer.py` (`generate_tickets` with its cached fallback, and `review_diff`) is in PR #4, waiting on Param's review. PR #2 (backend skeleton) is merged, so next is wiring the reviewer into it, then the webhook and GitHub client.
 
 ## Next
 
 ### M0: Skeleton + contract
 
-- [ ] Agree `models.py`, `schemas.py` and the API contract with Param (together, first thing)
+- [x] Agree `models.py`, `schemas.py` and the API contract with Param (merged in PR #2)
 - [x] ~~FastAPI skeleton~~ Param built it in PR #2
-- [ ] Create the GitHub App: pull requests read/write, contents read, subscribed to `pull_request`. Private key path and webhook secret go in `.env`
-- [ ] smee.io channel forwarding to local `/webhooks/github`. Confirm a ping arrives
-- [ ] Claude API key in `.env`. One test `messages.parse` call that returns a Pydantic model
-- [ ] Demo practice repo: the seeded calculator project, the default demo project. Prepare a demo PR with a real flaw, e.g. `eval()` on user input (code injection)
+- [x] Create the GitHub App: pull requests read/write, contents read, subscribed to `pull_request`. Private key path and webhook secret go in `.env`
+- [x] smee.io channel forwarding to local `/webhooks/github`. Confirm a ping arrives
+- [x] Claude API key in `.env`. One test `messages.parse` call that returns a Pydantic model
+- [x] Demo practice repo with a demo PR that has a real flaw: `eval()` on user input (code injection). No longer seeded: on stage it's linked through the idea form
+- [ ] Check the demo PR still fits the expression ticket in `FALLBACK_TICKETS` (`CalculatorError`, divide by zero), and add an input-length cap to `demo/evaluate-fix` (see Notes)
 
 ### M1: Live review + tickets
 
 - [ ] `POST /webhooks/github`: verify `X-Hub-Signature-256`, handle `pull_request` opened and synchronize, return 200 fast and do the work in a background task
-- [ ] Fetch the PR diff and match it to the learner and ticket: `Ticket: #<id>` in the PR description, else the learner's first ticket that isn't done
-- [ ] `reviewer.generate_tickets(idea)`: Claude turns a project idea into 3–5 tickets (title, why, acceptance criteria, skill areas), never the how. Param's `POST /api/projects` calls it. Fall back to the calculator's tickets if Claude fails
-- [ ] Review prompt returning the `Review` model: Socratic questions, security and correctness findings (class, file, line), hint ladder, policy flags against the one fixed AI rule (the AI never writes your code)
+- [ ] Fetch the PR diff and match it to the learner and ticket: `Ticket: #<id>` in the PR description, else the learner's first ticket that isn't done. On stage, read the id off the dashboard and type it into the demo PR
+- [x] `reviewer.generate_tickets(idea)`: Claude turns a project idea into 3–5 tickets (title, why, acceptance criteria, skill areas), never the how, with the core-feature ticket first. Param's `POST /api/projects` calls it. Falls back to the calculator's tickets if Claude fails (see M3)
+- [x] Review prompt returning the `Review` model: Socratic questions, security and correctness findings (class, file, line), hint ladder, policy flags against the one fixed AI rule (the AI never writes your code)
 - [ ] Don't create a second `Finding` when a later push finds the same vulnerability again, so a fix is only counted once
-- [ ] Enforce "no full corrected code": a rule in the prompt, plus rejecting snippets longer than about 5 lines
+- [x] Enforce "no full corrected code": a rule in the prompt, plus rejecting snippets longer than about 5 lines (one retry, then `ReviewerError`)
 - [ ] Post the review on the PR as the bot, with a link to the gate page in our app
 - [ ] Save the review and findings to the DB
 
@@ -44,7 +45,9 @@ M0: Param is reworking PR #2 for the no-levels scope. Meanwhile, set up the GitH
 
 - [ ] Return the "why" with every grade and finding. Add `POST /api/reviews/{id}/flag`
 - [ ] Timeouts and retries on Claude and GitHub calls. Handle `stop_reason == "refusal"`
-- [ ] Cached fallback tickets for the calculator, and review and questions for the demo PR, in case the API is slow or down during judging
+- [x] Cached fallback tickets for the calculator: `generate_tickets` returns them with `is_fallback=True` when Claude fails, with a 20s timeout and one SDK retry (~40s worst case). It never raises: cut-off JSON and unexpected errors fall back too, and a bad key is logged as an error. The expression ticket comes first, matching the demo PR
+- [ ] Cached review and questions for the demo PR, in case the API is slow or down during judging
+- [x] Agree who adds `is_fallback`: Param adds it to the `POST /api/projects` response and a `Project` column, in the `POST /api/projects` PR
 
 ### M4: Polish + submit
 
@@ -54,9 +57,22 @@ M0: Param is reworking PR #2 for the no-levels scope. Meanwhile, set up the GitH
 
 ## Blocked / need from Param
 
-- M0: PR #2 reworked for no levels, and his OK on the no-levels contract in project-plan.md
-- M2: `progress.record_gate_pass()` to call when a gate passes (in PR #2)
+- Re-review of PR #4 (reviewer service) and review of the plan update PR (no seeded projects)
+- Raise with Param (not posted yet): `progress.gate_score` averages the latest scores, but the pass rule is every question ≥ 70, so the skill-points check there should use the minimum. `schemas.py` also imports `TicketStatus` from `services/progress.py`; the contract file shouldn't depend on a service
+
+## Wiring into the skeleton (PR #2 is merged)
+
+`reviewer.py` was built standalone, before the skeleton existed. Now:
+
+- [x] Add `anthropic` to `backend/pyproject.toml` (shared file, Param told in the PR #2 approval)
+- [ ] Add `anthropic_api_key` to `config.Settings` and pass it to `anthropic.Anthropic(api_key=...)`. Right now the SDK reads it from the environment, which only works with `uv run --env-file .env`
+- [x] Replace the `SkillAreaName` Literal in `reviewer.py` with `models.SkillArea`
+- [ ] Map `ReviewResult` onto `Review` + `Finding` rows (`hints` = `[concept, where_to_look, snippet]`) and `TicketSet` onto `Project` + `Ticket`
+- [ ] Run `scripts/try_reviewer.py` with plain `uv run python -m scripts.try_reviewer` (it now takes the demo ticket from `FALLBACK_TICKETS`, since there's no seeded project any more)
+- [ ] Add the run and test commands to the Commands section of CLAUDE.md
 
 ## Notes
 
 - Claude: `claude-opus-5-5`. `client.messages.parse(..., output_format=Model)`, then read `response.parsed_output`.
+- `reviewer.py` uses `client.beta.messages.parse` with `fallbacks="default"` (beta `server-side-fallback-2026-07-01`), so if Opus 5.5's safety classifier declines security-flavoured code, the API retries on another model in the same call.
+- First runs (2026-11-07): tickets take ~15s, the review ~29s, which fits inside the 60s timeout. On the `eval()` PR it found CWE-94 at `calculator.py:32`, the `1/0` crash, other inputs that crash or slip through, and the missing tests. On `demo/evaluate-fix` it found one real issue: `_work_out` recurses once per operator, so a very long sum crashes with `RecursionError`. To keep the fix push clean in the demo, add an input-length cap to `demo/evaluate-fix`.
