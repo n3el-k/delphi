@@ -12,6 +12,11 @@ from pydantic import BaseModel, Field, StringConstraints
 from app.models import FindingKind, GateStatus, SkillArea
 from app.services.progress import TicketStatus
 
+# Any id a client sends us. SQLite and Postgres ids are 64-bit, so a bigger number would
+# overflow inside the database and come back as a 500. This turns it into a 422 up front.
+MAX_DB_ID = 2**63 - 1
+DbId = Annotated[int, Field(ge=1, le=MAX_DB_ID)]
+
 # --- GET /api/me ---
 
 
@@ -105,7 +110,7 @@ class GateOut(BaseModel):
 
 
 class AnswerIn(BaseModel):
-    question_id: int
+    question_id: DbId
     text: str = Field(min_length=1, max_length=2000)
 
 
@@ -137,8 +142,8 @@ class FlagIn(BaseModel):
     # Trimmed first, so a reason of only spaces counts as empty.
     reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
     # Leave both out to flag the whole review. Each must belong to the flagged review's PR.
-    finding_id: int | None = None
-    answer_id: int | None = None
+    finding_id: DbId | None = None
+    answer_id: DbId | None = None
 
 
 class FlagOut(BaseModel):

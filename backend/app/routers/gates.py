@@ -8,7 +8,9 @@ import logging
 import re
 from concurrent.futures import ThreadPoolExecutor
 
-from fastapi import APIRouter, Depends, HTTPException
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, HTTPException, Path
 from sqlmodel import Session, col, select
 
 from app.db import get_session
@@ -34,12 +36,16 @@ from app.schemas import (
     FlagIn,
     FlagOut,
     GateOut,
+    MAX_DB_ID,
     GateReviewOut,
     QuestionOut,
 )
 from app.services import github, progress, reviewer
 
 logger = logging.getLogger(__name__)
+
+# Path ids get the same bounds as body ids (see schemas.DbId).
+PathId = Annotated[int, Path(ge=1, le=MAX_DB_ID)]
 
 router = APIRouter(prefix="/api", tags=["gates"])
 
@@ -78,7 +84,7 @@ def last_answer(session: Session, question_id: int) -> Answer | None:
 
 
 @router.get("/gates/{gate_id}")
-def read_gate(gate_id: int, session: Session = Depends(get_session)) -> GateOut:
+def read_gate(gate_id: PathId, session: Session = Depends(get_session)) -> GateOut:
     gate, submission = get_gate(session, gate_id)
     ticket = session.get(Ticket, submission.ticket_id)
     assert ticket is not None
@@ -139,7 +145,7 @@ def read_gate(gate_id: int, session: Session = Depends(get_session)) -> GateOut:
 
 
 @router.post("/gates/{gate_id}/answers")
-def submit_answers(gate_id: int, body: AnswersIn, session: Session = Depends(get_session)) -> AnswersOut:
+def submit_answers(gate_id: PathId, body: AnswersIn, session: Session = Depends(get_session)) -> AnswersOut:
     """Grade a batch of answers. Pass every question on the latest push and the PR is approved.
 
     A plain `def`, not `async def`: grading blocks on Claude, so FastAPI runs it in a thread.
@@ -274,7 +280,7 @@ def _resolve_fixed_findings(session: Session, submission_id: int, latest: Review
 
 
 @router.post("/reviews/{review_id}/flag", status_code=201)
-def flag_review(review_id: int, body: FlagIn, session: Session = Depends(get_session)) -> FlagOut:
+def flag_review(review_id: PathId, body: FlagIn, session: Session = Depends(get_session)) -> FlagOut:
     """The learner disagrees with the AI: the whole review, one finding, or one grade.
 
     A flag is stored for a person to look at. It never changes a score, reopens a gate or

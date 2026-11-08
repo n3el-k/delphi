@@ -468,3 +468,18 @@ def test_answer_ids_from_both_responses_can_be_flagged(
     shown = client.get(f"/api/gates/{gate.id}").json()["questions"][0]["last_answer"]["id"]
     assert posted == shown
     assert flag(client, review.id, answer_id=shown).status_code == 201  # type: ignore[arg-type]
+
+
+# --- Ids out of range ------------------------------------------------------------
+
+
+@pytest.mark.parametrize("bad", [0, -1, 2**63, 10**20])
+def test_ids_out_of_range_are_422_not_500(client: TestClient, session: Session, gate: Gate, bad: int) -> None:
+    # Found in the security check: an id over 2**63 overflowed SQLite and came back as a 500.
+    review, _, questions = add_push(session, gate, "def456", security=False)
+    assert client.get(f"/api/gates/{bad}").status_code == 422
+    assert client.post(f"/api/gates/{bad}/answers", json={"answers": [{"question_id": 1, "text": "x"}]}).status_code == 422
+    assert client.post(f"/api/reviews/{bad}/flag", json={"reason": "x"}).status_code == 422
+    assert client.post(f"/api/gates/{gate.id}/answers", json={"answers": [{"question_id": bad, "text": "x"}]}).status_code == 422
+    for field in ("finding_id", "answer_id"):
+        assert client.post(f"/api/reviews/{review.id}/flag", json={"reason": "x", field: bad}).status_code == 422
