@@ -4,6 +4,8 @@ The frontend generates its TypeScript types from these through /openapi.json,
 so this file is the single source of truth. Neel's gate and flag models go here too.
 """
 
+from datetime import datetime
+
 from pydantic import BaseModel, Field
 
 from app.models import FindingKind, GateStatus, SkillArea
@@ -28,6 +30,8 @@ class SkillOut(BaseModel):
 class ProjectRef(BaseModel):
     id: int
     title: str
+    # Claude's summary of how it understood the idea (contract v1, from #3)
+    description: str
 
 
 class TicketOut(BaseModel):
@@ -121,3 +125,35 @@ class AnswersOut(BaseModel):
     # true when every question on the latest push has passed: the PR is approved
     passed: bool
     results: list[AnswerResult]
+
+
+# --- GET /api/portfolio ---
+
+
+class PortfolioLearner(BaseModel):
+    name: str
+    github_login: str
+
+
+class PortfolioEntry(BaseModel):
+    # One per approved PR: "<project>: <ticket>"
+    title: str
+    pr_url: str
+    approved_at: datetime
+    # The skill areas the ticket exercised
+    concepts: list[str]
+
+
+class SecurityFixOut(BaseModel):
+    vuln_class: str
+    file: str
+    pr_url: str
+    # What was wrong, in the AI reviewer's words
+    explanation: str
+
+
+class PortfolioOut(BaseModel):
+    learner: PortfolioLearner
+    # newest first
+    projects: list[PortfolioEntry]
+    security_fixes: list[SecurityFixOut]

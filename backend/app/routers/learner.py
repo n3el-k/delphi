@@ -46,7 +46,7 @@ def get_dashboard(session: Session = Depends(get_session)) -> DashboardOut:
     tickets: list[TicketOut] = []
     if current is not None:
         project, project_tickets = current
-        current_project = ProjectRef(id=project.id, title=project.title)  # type: ignore[arg-type]
+        current_project = ProjectRef(id=project.id, title=project.title, description=project.description)  # type: ignore[arg-type]
         tickets = [
             TicketOut(
                 id=t.id,  # type: ignore[arg-type]
