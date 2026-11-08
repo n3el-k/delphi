@@ -60,8 +60,17 @@ def current_learner(session: Session) -> Learner:
 
 
 def gate_score(session: Session, gate_id: int) -> float | None:
-    """Average of the latest answer's score on each question. None if a question is unanswered."""
-    questions = session.exec(select(Question).where(Question.gate_id == gate_id)).all()
+    """The lowest latest-answer score on the gate's latest push. None if a question is unanswered.
+
+    Only the latest push counts: each push gets its own questions (`Question.review_id`), and
+    the learner answers the ones about the code they're actually merging. The minimum, not the
+    average, because the pass rule is "every question at least 70": one strong answer mustn't
+    carry a weak one. Questions saved without a review_id (older data) all count together.
+    """
+    questions = list(session.exec(select(Question).where(Question.gate_id == gate_id)).all())
+    latest_push = max((q.review_id for q in questions if q.review_id is not None), default=None)
+    if latest_push is not None:
+        questions = [q for q in questions if q.review_id == latest_push]
     if not questions:
         return None
     latest_scores = []
@@ -72,7 +81,7 @@ def gate_score(session: Session, gate_id: int) -> float | None:
         if latest is None:
             return None
         latest_scores.append(latest.score)
-    return sum(latest_scores) / len(latest_scores)
+    return min(latest_scores)
 
 
 def counted_ticket_ids(session: Session, learner_id: int) -> set[int]:
