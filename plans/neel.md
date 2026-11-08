@@ -30,7 +30,7 @@ Previously: M1: `reviewer.py` (`generate_tickets` with its cached fallback, and 
 - [x] Fetch the PR diff and match it to the learner and ticket (the learner comes from the repo linked to their project, not the PR author): `Ticket: #<id>` in the PR description, else the learner's first ticket that isn't done. On stage, read the id off the dashboard and type it into the demo PR
 - [x] `reviewer.generate_tickets(idea)`: Claude turns a project idea into 3–5 tickets (title, why, acceptance criteria, skill areas), never the how, with the core-feature ticket first. Param's `POST /api/projects` calls it. Falls back to the calculator's tickets if Claude fails (see M3)
 - [x] Review prompt returning the `Review` model: Socratic questions, security and correctness findings (class, file, line), hint ladder, policy flags against the one fixed AI rule (the AI never writes your code)
-- [ ] Don't create a second `Finding` when a later push finds the same vulnerability again, so a fix is only counted once
+- [x] ~~Don't create a second `Finding`~~ Each push keeps its own findings as history, and on a pass only the newest copy of each problem (kind, file, CWE number) is marked resolved, so a fix counts once
 - [x] Enforce "no full corrected code": a rule in the prompt, plus rejecting snippets longer than about 5 lines (one retry, then `ReviewerError`)
 - [x] Post the review on the PR as the bot, with a link to the gate page in our app. Only the concept hint goes on GitHub, so `hints_revealed` starts at 1
 - [x] Save the review and findings to the DB
@@ -39,8 +39,8 @@ Previously: M1: `reviewer.py` (`generate_tickets` with its cached fallback, and 
 
 - [x] Generate 2–3 comprehension questions from the learner's own diff and store them as a Gate. They come from the review call, one set per push (`Question.review_id`), and a push after a finding gets a question about the fix
 - [x] `GET /api/gates/{id}` for Param's gate screen
-- [ ] `POST /api/gates/{id}/answers`: grade each answer with Claude (score 0–100, explanation, next hint). The gate passes when every question's latest score is ≥ 70. A fail moves up the hint ladder, it doesn't approve
-- [ ] On a pass: approve the PR through the GitHub API, set `Gate.status = passed` and `Submission.status = approved`, mark fixed findings `resolved`, then call Param's `progress.record_gate_pass(...)`. Leave `passed_at` to it
+- [x] `POST /api/gates/{id}/answers`: grade each answer with Claude (score 0–100, explanation, next hint). The gate passes when every question's latest score is ≥ 70. A fail moves up the hint ladder, it doesn't approve
+- [x] On a pass: approve the PR through the GitHub API (pinned to `head_sha`), set `Gate.status = passed` and `Submission.status = approved`, mark fixed findings `resolved`, then call Param's `progress.record_gate_pass(...)`. Leave `passed_at` to it
 - [ ] Run the full loop live 3+ times. Record a backup video of it
 
 ### M3: Transparency + hardening
@@ -60,7 +60,7 @@ Previously: M1: `reviewer.py` (`generate_tickets` with its cached fallback, and 
 ## Blocked / need from Param
 
 - Re-review of PR #4 (reviewer service) and review of the plan update PR (no seeded projects)
-- Raise with Param (not posted yet): `progress.gate_score` averages the latest scores, but the pass rule is every question ≥ 70, so the skill-points check there should use the minimum. `schemas.py` also imports `TicketStatus` from `services/progress.py`; the contract file shouldn't depend on a service
+- Raise with Param (in the gate part 2 PR): `progress.gate_score` counts every question on the gate across pushes. The webhook now deletes a push's unanswered questions when a new one lands, so the demo works, but if a learner answers on push 1 and then pushes again, those old answers still count. It should only look at the latest push's questions (`Question.review_id`). Older note: `progress.gate_score` averages the latest scores, but the pass rule is every question ≥ 70, so the skill-points check there should use the minimum. `schemas.py` also imports `TicketStatus` from `services/progress.py`; the contract file shouldn't depend on a service
 
 ## Wiring into the skeleton (PR #2 is merged)
 
