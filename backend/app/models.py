@@ -138,6 +138,9 @@ class Gate(SQLModel, table=True):
 class Question(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     gate_id: int = Field(foreign_key="gate.id")
+    # The push (review) this question was asked about. The gate shows the latest push's
+    # questions, and older ones stay for the "why this grade" history.
+    review_id: int | None = Field(default=None, foreign_key="review.id")
     finding_id: int | None = Field(default=None, foreign_key="finding.id")
     text: str
     file: str | None = None

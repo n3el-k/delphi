@@ -20,7 +20,7 @@ import app.models  # noqa: F401  (registers the tables)
 from app.config import settings
 from app.db import get_session
 from app.main import app
-from app.models import Finding, Gate, GateStatus, Project, Review, SkillArea, Submission, SubmissionStatus, Ticket
+from app.models import Finding, Gate, Question, GateStatus, Project, Review, SkillArea, Submission, SubmissionStatus, Ticket
 from app.seed import seed
 from app.services import github, progress, reviewer
 
@@ -44,6 +44,12 @@ REVIEW = reviewer.ReviewResult(
                 snippet="int('42')",
             ),
         )
+    ],
+    questions=[
+        reviewer.ReviewQuestion(
+            text="What would your calculator do with the input 'hello'?", file="calculator.py", line=32, finding_index=0
+        ),
+        reviewer.ReviewQuestion(text="Why did you put the empty check first?", file="calculator.py", line=28, finding_index=None),
     ],
     policy_flags=[],
 )
@@ -74,9 +80,10 @@ def fakes(monkeypatch: pytest.MonkeyPatch) -> dict:
     """Fake GitHub and Claude. Records what the bot would have posted."""
     calls: dict = {"comments": [], "reviews": 0}
 
-    def review_diff(diff: str, ticket: reviewer.TicketContext) -> reviewer.ReviewResult:
+    def review_diff(diff: str, ticket: reviewer.TicketContext, previous=None) -> reviewer.ReviewResult:
         calls["reviews"] += 1
         calls["ticket"] = ticket.title
+        calls["previous"] = previous
         return REVIEW
 
     def post_comment(repo: str, number: int, body: str) -> int:
@@ -269,7 +276,7 @@ def test_an_approved_pr_is_not_reopened(
 def test_a_failed_review_leaves_the_gate_reviewing(
     client: TestClient, session: Session, tickets: list[Ticket], fakes: dict, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    def fail(diff: str, ticket: reviewer.TicketContext) -> reviewer.ReviewResult:
+    def fail(diff: str, ticket: reviewer.TicketContext, previous=None) -> reviewer.ReviewResult:
         raise reviewer.ReviewerError("Claude timed out")
 
     monkeypatch.setattr(reviewer, "review_diff", fail)
@@ -308,12 +315,12 @@ def test_a_repeat_delivery_of_the_same_push_is_ignored(
 def test_reopening_retries_a_push_whose_review_failed(
     client: TestClient, session: Session, tickets: list[Ticket], fakes: dict, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    def fail(diff: str, ticket: reviewer.TicketContext) -> reviewer.ReviewResult:
+    def fail(diff: str, ticket: reviewer.TicketContext, previous=None) -> reviewer.ReviewResult:
         raise reviewer.ReviewerError("Claude timed out")
 
     monkeypatch.setattr(reviewer, "review_diff", fail)
     deliver(client, pr_event())
-    monkeypatch.setattr(reviewer, "review_diff", lambda diff, ticket: REVIEW)
+    monkeypatch.setattr(reviewer, "review_diff", lambda diff, ticket, previous=None: REVIEW)
 
     assert deliver(client, pr_event(action="reopened")).json() == {"status": "reviewing"}
     assert session.exec(select(Gate)).one().status == GateStatus.open
@@ -327,3 +334,36 @@ def test_reopening_an_already_reviewed_push_keeps_the_gate_open(
     assert deliver(client, pr_event(action="reopened")).json() == {"status": "ignored"}
     assert session.exec(select(Gate)).one().status == GateStatus.open
     assert fakes["reviews"] == 1
+
+
+# --- Questions and what the next push sees -------------------------------------
+
+
+def test_questions_are_saved_for_the_push(
+    client: TestClient, session: Session, tickets: list[Ticket], fakes: dict
+) -> None:
+    deliver(client, pr_event())
+    review = session.exec(select(Review)).one()
+    finding = session.exec(select(Finding)).one()
+    first, second = session.exec(select(Question).order_by(Question.id)).all()
+    assert first.review_id == review.id and first.finding_id == finding.id
+    assert first.file == "calculator.py" and first.line == 32
+    assert second.finding_id is None
+
+
+def test_a_new_push_is_reviewed_against_the_last_findings(
+    client: TestClient, session: Session, tickets: list[Ticket], fakes: dict
+) -> None:
+    deliver(client, pr_event())
+    assert fakes["previous"] == []
+    deliver(client, pr_event(action="synchronize", sha="def456"))
+    [previous] = fakes["previous"]
+    assert previous.vuln_class == "Code injection (CWE-94)"
+    assert previous.line == 32
+
+
+def test_the_comment_says_to_fix_a_security_issue_first(
+    client: TestClient, session: Session, tickets: list[Ticket], fakes: dict
+) -> None:
+    deliver(client, pr_event())
+    assert "Fix the security issue above and push again" in fakes["comments"][0]
