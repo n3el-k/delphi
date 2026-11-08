@@ -1,7 +1,8 @@
 """Tests for the learner endpoints and the progress rules.
 
-Each test gets its own fresh in-memory database with the real seed data,
-then simulates what Neel's gate code would do when a learner submits and passes.
+Each test gets its own fresh in-memory database with the real seed data (one learner,
+no projects). Tests add the projects they need with add_project(), the way
+POST /api/projects will, then simulate what Neel's gate code does when a learner passes.
 """
 
 from collections.abc import Iterator
@@ -9,7 +10,7 @@ from collections.abc import Iterator
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.pool import StaticPool
-from sqlmodel import Session, SQLModel, col, create_engine, select
+from sqlmodel import Session, SQLModel, create_engine, select
 
 import app.models  # noqa: F401  (registers the tables)
 from app.db import get_session
@@ -23,6 +24,7 @@ from app.models import (
     Learner,
     Project,
     Question,
+    SkillArea,
     SkillScore,
     Review,
     Submission,
@@ -49,17 +51,31 @@ def client(session: Session) -> Iterator[TestClient]:
     app.dependency_overrides.clear()
 
 
-def demo_tickets(session: Session) -> list[Ticket]:
-    """The demo learner's 6 seeded tickets: Calculator's 3, then To-do list's 3."""
+def add_project(session: Session, title: str = "Calculator", n_tickets: int = 3) -> list[Ticket]:
+    """Give the demo learner a project with n tickets, like POST /api/projects will. Returns its tickets in order."""
     learner = progress.current_learner(session)
-    return list(
-        session.exec(
-            select(Ticket)
-            .join(Project, col(Ticket.project_id) == col(Project.id))
-            .where(Project.learner_id == learner.id)
-            .order_by(col(Project.id), col(Ticket.position))
-        ).all()
+    project = Project(
+        learner_id=learner.id, idea=f"An idea for {title}", title=title,  # type: ignore[arg-type]
+        description=f"A test {title}.", repo_full_name="n3el-k/practice",
     )
+    session.add(project)
+    session.flush()
+    tickets = [
+        Ticket(
+            project_id=project.id, position=i, title=f"{title} ticket {i}", why="Because.",  # type: ignore[arg-type]
+            acceptance_criteria=["It works"], skill_areas=[SkillArea.backend, SkillArea.testing],
+        )
+        for i in range(1, n_tickets + 1)
+    ]
+    session.add_all(tickets)
+    session.commit()
+    return tickets
+
+
+@pytest.fixture
+def tickets(session: Session) -> list[Ticket]:
+    """One project with 3 tickets, for tests that just need something to pass."""
+    return add_project(session)
 
 
 def pass_ticket(session: Session, ticket: Ticket, score: int = 90, security_fix: bool = False) -> Submission:
@@ -99,37 +115,39 @@ def statuses(body: dict) -> list[str]:
     return [t["status"] for t in body["tickets"]]
 
 
-def test_new_learner_dashboard(client: TestClient) -> None:
+def test_new_learner_has_an_empty_dashboard(client: TestClient) -> None:
     body = client.get("/api/dashboard").json()
     assert set(body) == {"skills", "current_project", "tickets", "open_gate_id"}  # matches the contract exactly
     assert [s["score"] for s in body["skills"]] == [0] * 7
-    assert body["current_project"]["title"] == "Calculator"
-    assert [t["title"] for t in body["tickets"]] == [
-        "Make add() and subtract() return the right answer",
-        "Handle dividing by zero",
-        "Evaluate a whole expression",
-    ]
-    assert statuses(body) == ["todo", "todo", "todo"]
+    assert body["current_project"] is None  # no seeded projects: the frontend shows "Start a project"
+    assert body["tickets"] == []
     assert body["open_gate_id"] is None
 
 
-def test_passing_marks_ticket_done_and_raises_skills(client: TestClient, session: Session) -> None:
-    pass_ticket(session, demo_tickets(session)[0])
+def test_a_new_project_shows_its_tickets(client: TestClient, tickets: list[Ticket]) -> None:
+    body = client.get("/api/dashboard").json()
+    assert body["current_project"]["title"] == "Calculator"
+    assert [t["title"] for t in body["tickets"]] == ["Calculator ticket 1", "Calculator ticket 2", "Calculator ticket 3"]
+    assert statuses(body) == ["todo", "todo", "todo"]
+
+
+def test_passing_marks_ticket_done_and_raises_skills(client: TestClient, session: Session, tickets: list[Ticket]) -> None:
+    pass_ticket(session, tickets[0])
     body = client.get("/api/dashboard").json()
     assert statuses(body) == ["done", "todo", "todo"]
     skills = {s["area"]: s["score"] for s in body["skills"]}
     assert skills["backend"] == 10 and skills["testing"] == 10 and skills["security"] == 0
 
 
-def test_low_gate_score_does_not_count_or_earn_skills(client: TestClient, session: Session) -> None:
-    pass_ticket(session, demo_tickets(session)[0], score=60)  # below MIN_GATE_SCORE (70)
+def test_low_gate_score_does_not_count_or_earn_skills(client: TestClient, session: Session, tickets: list[Ticket]) -> None:
+    pass_ticket(session, tickets[0], score=60)  # below MIN_GATE_SCORE (70)
     body = client.get("/api/dashboard").json()
     assert statuses(body) == ["in_review", "todo", "todo"]  # has a PR, but it doesn't count
     assert [s["score"] for s in body["skills"]] == [0] * 7
 
 
-def test_ticket_is_in_review_while_its_gate_is_open(client: TestClient, session: Session) -> None:
-    ticket = demo_tickets(session)[0]
+def test_ticket_is_in_review_while_its_gate_is_open(client: TestClient, session: Session, tickets: list[Ticket]) -> None:
+    ticket = tickets[0]
     sub = Submission(
         learner_id=progress.current_learner(session).id, ticket_id=ticket.id,  # type: ignore[arg-type]
         repo_full_name="n3el-k/level1-calculator", pr_number=7, pr_url="https://github.com/n3el-k/level1-calculator/pull/7",
@@ -145,19 +163,33 @@ def test_ticket_is_in_review_while_its_gate_is_open(client: TestClient, session:
     assert body["open_gate_id"] == gate.id
 
 
-def test_finishing_a_project_moves_to_the_next(client: TestClient, session: Session) -> None:
-    calc = demo_tickets(session)[:3]
-    pass_ticket(session, calc[0])
-    pass_ticket(session, calc[1])
-    pass_ticket(session, calc[2], security_fix=True)
+def test_newest_unfinished_project_is_current(client: TestClient, session: Session) -> None:
+    add_project(session, "Calculator")
+    add_project(session, "To-do list")
     body = client.get("/api/dashboard").json()
-    assert body["current_project"]["title"] == "To-do list"
+    assert body["current_project"]["title"] == "To-do list"  # the one just created, not the older one
+
+
+def test_finishing_the_newest_project_falls_back_to_an_older_one(client: TestClient, session: Session) -> None:
+    add_project(session, "Calculator")
+    for t in add_project(session, "To-do list"):
+        pass_ticket(session, t)
+    body = client.get("/api/dashboard").json()
+    assert body["current_project"]["title"] == "Calculator"
     assert statuses(body) == ["todo", "todo", "todo"]
-    assert {s["area"]: s["score"] for s in body["skills"]}["security"] == 15  # +10 for the ticket, +5 for the fix
 
 
-def test_no_current_project_once_everything_is_done(client: TestClient, session: Session) -> None:
-    for t in demo_tickets(session):
+def test_a_security_fix_earns_extra_security_points(client: TestClient, session: Session, tickets: list[Ticket]) -> None:
+    tickets[0].skill_areas = [SkillArea.security]
+    session.add(tickets[0])
+    session.commit()
+    pass_ticket(session, tickets[0], security_fix=True)
+    skills = {s["area"]: s["score"] for s in client.get("/api/dashboard").json()["skills"]}
+    assert skills["security"] == 15  # +10 for the ticket, +5 for the fix
+
+
+def test_no_current_project_once_everything_is_done(client: TestClient, session: Session, tickets: list[Ticket]) -> None:
+    for t in tickets:
         pass_ticket(session, t)
     body = client.get("/api/dashboard").json()
     assert body["current_project"] is None
@@ -209,15 +241,15 @@ def test_cors_only_allows_our_frontend(client: TestClient) -> None:
     assert "access-control-allow-origin" not in other.headers
 
 
-def test_recording_the_same_pass_twice_counts_once(session: Session) -> None:
-    sub = pass_ticket(session, demo_tickets(session)[0])
+def test_recording_the_same_pass_twice_counts_once(session: Session, tickets: list[Ticket]) -> None:
+    sub = pass_ticket(session, tickets[0])
     assert progress.record_gate_pass(session, 1, sub.id) is False  # type: ignore[arg-type]
     backend = session.exec(select(SkillScore).where(SkillScore.area == "backend")).one()
     assert backend.score == 10
 
 
-def test_cannot_record_a_pass_for_an_unapproved_pr(session: Session) -> None:
-    ticket = demo_tickets(session)[0]
+def test_cannot_record_a_pass_for_an_unapproved_pr(session: Session, tickets: list[Ticket]) -> None:
+    ticket = tickets[0]
     sub = Submission(
         learner_id=1, ticket_id=ticket.id, repo_full_name="x/y", pr_number=1, pr_url="u",  # type: ignore[arg-type]
         head_sha="a", diff="", status=SubmissionStatus.awaiting_gate,
@@ -228,8 +260,8 @@ def test_cannot_record_a_pass_for_an_unapproved_pr(session: Session) -> None:
         progress.record_gate_pass(session, 1, sub.id)  # type: ignore[arg-type]
 
 
-def test_cannot_record_a_pass_for_someone_elses_pr(session: Session) -> None:
-    sub = pass_ticket(session, demo_tickets(session)[0])
+def test_cannot_record_a_pass_for_someone_elses_pr(session: Session, tickets: list[Ticket]) -> None:
+    sub = pass_ticket(session, tickets[0])
     other = Learner(name="Someone else", github_login="someone-else")
     session.add(other)
     session.commit()
@@ -237,10 +269,10 @@ def test_cannot_record_a_pass_for_someone_elses_pr(session: Session) -> None:
         progress.record_gate_pass(session, other.id, sub.id)  # type: ignore[arg-type]
 
 
-def test_skills_never_go_above_100(session: Session) -> None:
+def test_skills_never_go_above_100(session: Session, tickets: list[Ticket]) -> None:
     skill = session.exec(select(SkillScore).where(SkillScore.area == "backend")).one()
     skill.score = 95
     session.add(skill)
     session.commit()
-    pass_ticket(session, demo_tickets(session)[0])
+    pass_ticket(session, tickets[0])
     assert skill.score == 100

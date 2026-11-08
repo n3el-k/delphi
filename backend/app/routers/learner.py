@@ -31,9 +31,15 @@ def get_dashboard(session: Session = Depends(get_session)) -> DashboardOut:
     counted = progress.counted_ticket_ids(session, me.id)
     submitted = progress.submitted_ticket_ids(session, me.id)
 
-    # The current project is the learner's first one that isn't done yet.
+    # The current project is the learner's newest one that isn't done yet, so a project
+    # they just created shows up straight away. learner_projects() is oldest first,
+    # so walk it backwards.
     current = next(
-        ((p, t) for p, t in progress.learner_projects(session, me.id) if not progress.is_project_done(t, counted)),
+        (
+            (p, t)
+            for p, t in reversed(progress.learner_projects(session, me.id))
+            if not progress.is_project_done(t, counted)
+        ),
         None,
     )
     current_project = None
