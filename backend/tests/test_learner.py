@@ -114,8 +114,13 @@ def tickets(session: Session) -> list[Ticket]:
     return add_project(session)
 
 
-def pass_ticket(session: Session, ticket: Ticket, score: int = 90, security_fix: bool = False) -> Submission:
-    """Simulate Neel's side: an approved PR, a passed gate with one graded answer, then record_gate_pass."""
+def pass_ticket(
+    session: Session, ticket: Ticket, score: int = 90, security_fix: bool = False, other_scores: tuple[int, ...] = ()
+) -> Submission:
+    """Simulate Neel's side: an approved PR, a passed gate with graded answers, then record_gate_pass.
+
+    The gate has one question scored `score`, plus one more per entry in `other_scores`.
+    """
     learner = progress.current_learner(session)
     sub = Submission(
         learner_id=learner.id, ticket_id=ticket.id, repo_full_name="n3el-k/practice",  # type: ignore[arg-type]
@@ -133,10 +138,11 @@ def pass_ticket(session: Session, ticket: Ticket, score: int = 90, security_fix:
             review_id=review.id, kind=FindingKind.security, vuln_class="code injection",  # type: ignore[arg-type]
             file="calc.py", line=3, explanation="eval runs input as code", socratic_question="?", resolved=True,
         ))
-    question = Question(gate_id=gate.id, text="What does line 3 do?")  # type: ignore[arg-type]
-    session.add(question)
-    session.flush()
-    session.add(Answer(question_id=question.id, text="...", score=score, passed=score >= 70, explanation="..."))  # type: ignore[arg-type]
+    for i, s in enumerate((score, *other_scores), start=1):
+        question = Question(gate_id=gate.id, text=f"Question {i}")  # type: ignore[arg-type]
+        session.add(question)
+        session.flush()
+        session.add(Answer(question_id=question.id, text="...", score=s, passed=s >= 70, explanation="..."))  # type: ignore[arg-type]
     session.flush()
     progress.record_gate_pass(session, learner.id, sub.id)  # type: ignore[arg-type]
     return sub
@@ -179,6 +185,14 @@ def test_low_gate_score_does_not_count_or_earn_skills(client: TestClient, sessio
     pass_ticket(session, tickets[0], score=60)  # below MIN_GATE_SCORE (70)
     body = client.get("/api/dashboard").json()
     assert statuses(body) == ["in_review", "todo", "todo"]  # has a PR, but it doesn't count
+    assert [s["score"] for s in body["skills"]] == [0] * 7
+
+
+def test_one_failed_question_stops_a_ticket_counting(client: TestClient, session: Session, tickets: list[Ticket]) -> None:
+    # 90 and 55 average 72.5, which would pass on an average. Every question needs 70, so it doesn't.
+    pass_ticket(session, tickets[0], score=90, other_scores=(55,))
+    body = client.get("/api/dashboard").json()
+    assert statuses(body) == ["in_review", "todo", "todo"]
     assert [s["score"] for s in body["skills"]] == [0] * 7
 
 

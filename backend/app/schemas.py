@@ -6,8 +6,7 @@ so this file is the single source of truth. Neel's gate and flag models go here 
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.models import FindingKind, GateStatus, SkillArea
-from app.services.progress import TicketStatus
+from app.models import FindingKind, GateStatus, SkillArea, TicketStatus
 
 # --- GET /api/me ---
 

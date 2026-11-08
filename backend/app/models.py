@@ -32,6 +32,14 @@ class SubmissionStatus(StrEnum):
     approved = "approved"
 
 
+class TicketStatus(StrEnum):
+    """Where the learner is with a ticket. Not a column: computed from their PRs (progress.ticket_status)."""
+
+    todo = "todo"
+    in_review = "in_review"
+    done = "done"
+
+
 class GateStatus(StrEnum):
     reviewing = "reviewing"
     open = "open"
