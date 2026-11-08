@@ -10,7 +10,9 @@ The GitHub + AI pipeline: everything that talks to GitHub or Claude. I meet Para
 
 M1 and M2 are merged (#7–#10). The backend runs the whole loop: PR → webhook → Socratic review with findings and questions → answers graded in the app → bot approves the PR → skill map updates. Tested live once end to end on `n3el-k/level1-calculator`.
 
-Next: test the whole app end to end once Param's `POST /api/projects` and screens are in, then `POST /api/reviews/{id}/flag`.
+Frontend skeleton (`feat/frontend-skeleton`): all four pages working against the backend, plain shadcn/ui look. Param takes over layout and polish.
+
+Next: run the whole loop live through the app (idea → tickets → demo PR → gate → pass), then record the backup video.
 
 ## Next
 

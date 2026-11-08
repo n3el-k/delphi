@@ -54,7 +54,7 @@ We're a security and accessibility product, so our own code has to pass the stan
 
 - **Backend:** Python 3.12, FastAPI, SQLModel + SQLite, uv.
 - **Claude:** Anthropic Python SDK, model `claude-opus-5-5`. Get structured output with `client.messages.parse(..., output_format=<Pydantic model>)` and read `response.parsed_output`. Check `stop_reason` for `"refusal"` before using the result.
-- **Frontend:** Vite + React + TypeScript, Tailwind, shadcn/ui, React Router, TanStack Query, lucide-react. It has to look great: consistent spacing, a real type scale, and loading, empty and error states on every page.
+- **Frontend:** Vite + React + TypeScript, Tailwind, shadcn/ui, React Router, lucide-react. No data-fetching library: pages call the API through `useApi` and `post` in `frontend/src/lib/api.ts`, typed from the backend's `/openapi.json`. It has to look great: consistent spacing, a real type scale, and loading, empty and error states on every page.
 
 ## Commands
 
@@ -74,4 +74,12 @@ GitHub webhooks in dev: run exactly one smee client. Two clients deliver every e
 npx -y smee-client --url "$SMEE_URL" --target http://localhost:8000/webhooks/github
 ```
 
-Frontend: not set up yet.
+Frontend, from `frontend/` (the backend must be running):
+
+```bash
+npm install                               # install
+npm run dev                               # app on http://localhost:5173
+npm run gen:api                           # regenerate src/lib/api-types.ts after a schemas.py change
+npm run build                             # typecheck and build
+npm run lint                              # oxlint
+```
