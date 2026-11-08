@@ -68,6 +68,14 @@ uv run pytest                             # tests (offline: GitHub and Claude ar
 uv run python -m scripts.try_reviewer     # real Claude calls on the demo diff (costs a little)
 ```
 
+The live demo, from the repo root. It runs git in a clone of `n3el-k/level1-calculator` next to this repo (set `DEMO_DIR` if it's elsewhere):
+
+```bash
+./scripts/demo.sh start 1                 # open a PR with the eval() flaw for ticket #1 (the id on the dashboard)
+./scripts/demo.sh fix                     # push the fix to that PR
+./scripts/demo.sh reset                   # close demo PRs, delete live/run-* branches, reseed the database
+```
+
 GitHub webhooks in dev: run exactly one smee client. Two clients deliver every event twice.
 
 ```bash
