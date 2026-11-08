@@ -126,6 +126,11 @@ export default function NonprofitsPage() {
             {COMMISSIONS.length} projects from {COMMISSIONS.length} organisations
           </p>
         </div>
+        <p className="max-w-prose text-sm text-muted-foreground">
+          Several learners can work on the same commission. Taking one on doesn't guarantee the nonprofit will use your
+          code: if someone else's version fits their needs better, they may choose that one. Your approved work still
+          counts toward your portfolio.
+        </p>
 
         <ul className="grid gap-4 md:grid-cols-2">
           {COMMISSIONS.map((c) => (
