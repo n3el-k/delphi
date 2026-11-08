@@ -26,6 +26,17 @@ prefixed() {
 
 port_in_use() { lsof -iTCP:"$1" -sTCP:LISTEN -n -P >/dev/null 2>&1; }
 
+# Stop with a message that says what holds the port and how to free it
+check_port() {
+  local port="$1" what="$2" pids
+  port_in_use "$port" || return 0
+  pids="$(lsof -tiTCP:"$port" -sTCP:LISTEN | sort -u | tr '\n' ' ')"
+  echo "start: port $port is already in use, probably by an old $what. Nothing was started." >&2
+  ps -o pid=,command= -p "${pids// /,}" 2>/dev/null | cut -c1-120 | sed 's/^/start:   /' >&2
+  echo "start: stop it (Ctrl+C in its terminal, or: kill ${pids% }) and run this again." >&2
+  exit 1
+}
+
 # 1. Tools
 command -v uv >/dev/null || die "uv is not installed. See https://docs.astral.sh/uv/"
 command -v npm >/dev/null || die "npm is not installed. You need Node 20+."
@@ -37,8 +48,8 @@ if [ ! -f "$ROOT/backend/.env" ]; then
 fi
 
 # 3. Ports: a second copy of the API would fight the first over the database
-port_in_use "$API_PORT" && die "port $API_PORT is already in use. Is the API already running?"
-port_in_use "$WEB_PORT" && die "port $WEB_PORT is already in use. Is the web app already running?"
+check_port "$API_PORT" "API"
+check_port "$WEB_PORT" "web app"
 
 # 4. Dependencies (uv sync is a no-op when nothing changed; npm install only when needed)
 say "checking backend dependencies"
