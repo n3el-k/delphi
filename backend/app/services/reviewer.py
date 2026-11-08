@@ -3,9 +3,8 @@
 Every call returns a Pydantic model through `messages.parse`, so the output is
 checked against our schema before any of our code touches it.
 
-It doesn't use `config.py` yet: it was built before the backend skeleton (PR #2)
-landed, and reading the key from settings is a follow-up.
-The Anthropic SDK reads ANTHROPIC_API_KEY from the environment by itself.
+The API key comes from `config.settings` (backend/.env), falling back to the
+ANTHROPIC_API_KEY environment variable.
 """
 
 import logging
@@ -15,6 +14,7 @@ from typing import Literal
 import anthropic
 from pydantic import BaseModel, Field, ValidationError
 
+from app.config import settings
 from app.models import SkillArea
 
 MODEL = "claude-opus-5-5"
@@ -266,7 +266,13 @@ _OUR_FAULT_STATUSES = {400, 401, 403, 404}
 def _client() -> anthropic.Anthropic:
     # Created on first use, not at import, so importing this module (e.g. in tests)
     # doesn't need an API key.
-    return anthropic.Anthropic(timeout=TIMEOUT_SECONDS, max_retries=1)
+    # None lets the SDK fall back to the ANTHROPIC_API_KEY environment variable.
+    key = settings.anthropic_api_key
+    return anthropic.Anthropic(
+        api_key=key.get_secret_value() if key else None,
+        timeout=TIMEOUT_SECONDS,
+        max_retries=1,
+    )
 
 
 def _parse(

@@ -13,6 +13,9 @@ class Settings(BaseSettings):
     frontend_origin: str = "http://localhost:5173"
     # GitHub login of the single seeded learner. (The webhook matches PRs by repo, not by author.)
     demo_learner_github_login: str = "param-m1"
+    # Claude API key. Settings reads .env but doesn't export it to the environment,
+    # so the reviewer passes this to the SDK itself. SecretStr keeps it out of reprs and logs.
+    anthropic_api_key: SecretStr | None = None
 
     # GitHub App (Neel's webhook and bot). The webhook secret signs every delivery, so it's
     # a SecretStr: it stays out of reprs and logs. The private key stays in its own file.
