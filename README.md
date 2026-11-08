@@ -47,6 +47,16 @@ git clone https://github.com/n3el-k/hackthechange2026.git
 cd hackthechange2026
 ```
 
+### Quick start
+
+Once `backend/.env` is filled in (see below), one command runs everything:
+
+```bash
+./scripts/start.sh
+```
+
+It installs missing dependencies, seeds the database if there isn't one, then starts the API (http://localhost:8000), the web app (http://localhost:5173) and the smee webhook client, all in one terminal. Ctrl+C stops everything. On a first run it creates `backend/.env` from the template and stops so you can fill it in. To run each part yourself, follow the steps below.
+
 ### Backend
 
 You need Python 3.12+ and [uv](https://docs.astral.sh/uv/).
