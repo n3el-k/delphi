@@ -2,11 +2,17 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/geist";
+@import "@fontsource-variable/fraunces";
 
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
-    --font-heading: var(--font-sans);
+    --color-forest: var(--forest);
+    --color-jungle: var(--jungle);
+    --color-jungle-ink: var(--jungle-ink);
+    --color-peach: var(--peach);
+    --color-peach-soft: var(--peach-soft);
+    --font-heading: 'Fraunces Variable', Georgia, serif;
     --font-sans: 'Geist Variable', sans-serif;
     --color-sidebar-ring: var(--sidebar-ring);
     --color-sidebar-border: var(--sidebar-border);
@@ -49,38 +55,47 @@
 }
 
 :root {
-    --background: oklch(1 0 0);
-    --foreground: oklch(0.145 0 0);
-    --card: oklch(1 0 0);
-    --card-foreground: oklch(0.145 0 0);
-    --popover: oklch(1 0 0);
-    --popover-foreground: oklch(0.145 0 0);
-    --primary: oklch(0.205 0 0);
-    --primary-foreground: oklch(0.985 0 0);
-    --secondary: oklch(0.97 0 0);
-    --secondary-foreground: oklch(0.205 0 0);
-    --muted: oklch(0.97 0 0);
-    --muted-foreground: oklch(0.556 0 0);
-    --accent: oklch(0.97 0 0);
-    --accent-foreground: oklch(0.205 0 0);
-    --destructive: oklch(0.577 0.245 27.325);
-    --border: oklch(0.922 0 0);
-    --input: oklch(0.922 0 0);
-    --ring: oklch(0.708 0 0);
-    --chart-1: oklch(0.87 0 0);
-    --chart-2: oklch(0.556 0 0);
-    --chart-3: oklch(0.439 0 0);
-    --chart-4: oklch(0.371 0 0);
-    --chart-5: oklch(0.269 0 0);
-    --radius: 0.625rem;
-    --sidebar: oklch(0.985 0 0);
-    --sidebar-foreground: oklch(0.145 0 0);
-    --sidebar-primary: oklch(0.205 0 0);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.97 0 0);
-    --sidebar-accent-foreground: oklch(0.205 0 0);
-    --sidebar-border: oklch(0.922 0 0);
-    --sidebar-ring: oklch(0.708 0 0);
+    /* Delphi palette. Contrast checked against WCAG AA:
+       jungle (#29AB87) is only 2.9:1 on white, so it's a fill with dark text on it (5.3:1),
+       never text on white. Text, links and the focus ring use jungle-ink (5.3:1 on white). */
+    --forest: #0E3B2E;      /* dark green: header, primary buttons (white on it 12.5:1) */
+    --jungle: #29AB87;      /* jungle green: progress, success, "Done" */
+    --jungle-ink: #1B7A5F;  /* jungle green dark enough for text and focus rings */
+    --peach: #FFCBA4;       /* highlights: logo, active nav, "In review" (ink on it 10.5:1) */
+    --peach-soft: #FFF1E6;  /* calm highlight backgrounds */
+
+    --background: #F4F8F6;
+    --foreground: #0B2A20;
+    --card: #FFFFFF;
+    --card-foreground: #0B2A20;
+    --popover: #FFFFFF;
+    --popover-foreground: #0B2A20;
+    --primary: var(--forest);
+    --primary-foreground: #FFFFFF;
+    --secondary: #E3F1EB;
+    --secondary-foreground: #0B2A20;
+    --muted: #E7F0EC;
+    --muted-foreground: #4A6157;   /* 6.3:1 on the page background */
+    --accent: var(--peach-soft);
+    --accent-foreground: #0B2A20;
+    --destructive: #B42318;
+    --border: #D5E3DC;
+    --input: #748E82;              /* input borders need 3:1: this is 3.5:1 */
+    --ring: var(--jungle-ink);
+    --chart-1: var(--jungle);
+    --chart-2: var(--forest);
+    --chart-3: var(--peach);
+    --chart-4: #4A6157;
+    --chart-5: #E3F1EB;
+    --radius: 0.75rem;
+    --sidebar: #FFFFFF;
+    --sidebar-foreground: #0B2A20;
+    --sidebar-primary: var(--forest);
+    --sidebar-primary-foreground: #FFFFFF;
+    --sidebar-accent: var(--peach-soft);
+    --sidebar-accent-foreground: #0B2A20;
+    --sidebar-border: #D5E3DC;
+    --sidebar-ring: var(--jungle-ink);
 }
 
 .dark {
@@ -119,12 +134,15 @@
 
 @layer base {
   * {
-    @apply border-border outline-ring/50;
+    @apply border-border outline-ring;
     }
   body {
     @apply bg-background text-foreground;
     }
   html {
     @apply font-sans;
+    }
+  h1, h2 {
+    @apply font-heading tracking-tight;
     }
 }

@@ -35,7 +35,7 @@ export default function NewProjectPage() {
 
   return (
     <div className="space-y-8">
-      <title>New project · Hack the Change</title>
+      <title>New project · Delphi</title>
       <div className="space-y-1">
         <h1 className="text-2xl font-semibold">New project</h1>
         <p className="text-muted-foreground">

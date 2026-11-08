@@ -18,7 +18,7 @@ export default function PortfolioPage() {
 
   return (
     <div className="space-y-8">
-      <title>Portfolio · Hack the Change</title>
+      <title>Portfolio · Delphi</title>
       <div className="space-y-1">
         <h1 className="text-2xl font-semibold">{data.learner.name}'s experience report</h1>
         <p className="text-muted-foreground">

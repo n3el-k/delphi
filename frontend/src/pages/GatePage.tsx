@@ -46,7 +46,7 @@ export default function GatePage() {
 
   return (
     <div className="space-y-8">
-      <title>{`Review: ${gate.ticket_title} · Hack the Change`}</title>
+      <title>{`Review: ${gate.ticket_title} · Delphi`}</title>
       <div className="space-y-2">
         <p className="text-sm text-muted-foreground">Code review</p>
         <h1 className="text-2xl font-semibold">{gate.ticket_title}</h1>

@@ -11,7 +11,7 @@ const INSTALL_URL = `https://github.com/apps/${APP_SLUG}/installations/new`
 export default function HelpPage() {
   return (
     <div className="space-y-8">
-      <title>Help · Hack the Change</title>
+      <title>Help · Delphi</title>
       <div className="space-y-1">
         <h1 className="text-2xl font-semibold">Getting started</h1>
         <p className="text-muted-foreground">
