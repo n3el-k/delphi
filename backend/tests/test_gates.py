@@ -140,7 +140,7 @@ def test_an_open_gate_shows_its_review(client: TestClient, session: Session, gat
     review, _, questions = add_push(session, gate, "abc123")
     body = client.get(f"/api/gates/{gate.id}").json()
     assert body["status"] == "open"
-    assert body["review"] == {"id": review.id, "summary": "Review of abc123.", "is_fallback": False}
+    assert body["review"] == {"id": review.id, "summary": "Review of abc123."}
     [finding] = body["findings"]
     assert finding["vuln_class"] == "Code injection (CWE-94)"
     assert [q["id"] for q in body["questions"]] == [q.id for q in questions]

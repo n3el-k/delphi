@@ -299,8 +299,6 @@ export interface components {
             id: number;
             /** Summary */
             summary: string;
-            /** Is Fallback */
-            is_fallback: boolean;
         };
         /**
          * GateStatus
@@ -366,8 +364,6 @@ export interface components {
             title: string;
             /** Description */
             description: string;
-            /** Is Fallback */
-            is_fallback: boolean;
             /** Tickets */
             tickets: components["schemas"]["TicketBase"][];
         };

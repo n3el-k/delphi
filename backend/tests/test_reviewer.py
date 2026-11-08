@@ -1,4 +1,4 @@
-"""Tests for the reviewer's fallback behaviour. No real Claude calls: _parse is replaced."""
+"""Tests for the reviewer's Claude calls. No real Claude calls: _parse or the client is replaced."""
 
 import logging
 from types import SimpleNamespace
@@ -9,36 +9,37 @@ import pytest
 from pydantic import SecretStr
 
 from app.services import reviewer
-from app.services.reviewer import FALLBACK_TICKETS, ReviewerError, TicketDraft, TicketSet
+from app.services.reviewer import ReviewerError, TicketDraft, TicketSet
+
+THREE_TICKETS = [
+    TicketDraft(title=f"T{i}", why="w", acceptance_criteria=["a"], skill_areas=["backend"]) for i in range(3)
+]
 
 
 def fail(*_args, **_kwargs):
     raise ReviewerError("Claude timed out")
 
 
-def test_falls_back_to_cached_tickets_when_claude_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_raises_when_claude_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    # No cached tickets: the caller (POST /api/projects) turns this into "try again".
     monkeypatch.setattr(reviewer, "_parse", fail)
-    result = reviewer.generate_tickets("A calculator")
-    assert result.is_fallback is True
-    assert result.tickets == FALLBACK_TICKETS.tickets
+    with pytest.raises(ReviewerError):
+        reviewer.generate_tickets("A calculator")
 
 
-def test_falls_back_when_claude_returns_too_few_tickets(monkeypatch: pytest.MonkeyPatch) -> None:
-    one_ticket = TicketSet(project_title="X", description="Y", tickets=FALLBACK_TICKETS.tickets[:1])
+def test_raises_when_claude_returns_too_few_tickets(monkeypatch: pytest.MonkeyPatch) -> None:
+    one_ticket = TicketSet(project_title="X", description="Y", tickets=THREE_TICKETS[:1])
     monkeypatch.setattr(reviewer, "_parse", lambda *a, **k: one_ticket)
-    assert reviewer.generate_tickets("A calculator").is_fallback is True
+    with pytest.raises(ReviewerError):
+        reviewer.generate_tickets("A calculator")
 
 
-def test_claude_tickets_are_not_marked_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
-    good = TicketSet(
-        project_title="To-do list",
-        description="A to-do list.",
-        tickets=[TicketDraft(title=f"T{i}", why="w", acceptance_criteria=["a"], skill_areas=["backend"]) for i in range(3)],
-    )
+def test_returns_claudes_tickets(monkeypatch: pytest.MonkeyPatch) -> None:
+    good = TicketSet(project_title="To-do list", description="A to-do list.", tickets=THREE_TICKETS)
     monkeypatch.setattr(reviewer, "_parse", lambda *a, **k: good)
     result = reviewer.generate_tickets("A to-do list")
-    assert result.is_fallback is False
     assert result.project_title == "To-do list"
+    assert result.tickets == THREE_TICKETS
 
 
 def test_ticket_calls_use_the_shorter_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -49,7 +50,8 @@ def test_ticket_calls_use_the_shorter_timeout(monkeypatch: pytest.MonkeyPatch) -
         raise ReviewerError("stop")
 
     monkeypatch.setattr(reviewer, "_parse", spy)
-    reviewer.generate_tickets("A calculator")
+    with pytest.raises(ReviewerError):
+        reviewer.generate_tickets("A calculator")
     assert seen["timeout"] == reviewer.TICKETS_TIMEOUT_SECONDS
 
 
@@ -64,24 +66,16 @@ def use_client(monkeypatch: pytest.MonkeyPatch, parse) -> None:
     monkeypatch.setattr(reviewer, "_client", lambda: FakeClient(parse))
 
 
-def test_cut_off_json_falls_back_instead_of_raising(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_cut_off_json_becomes_a_reviewer_error(monkeypatch: pytest.MonkeyPatch) -> None:
     # parse() validates Claude's JSON inside the call, so a cut-off answer raises
-    # pydantic's ValidationError, not an Anthropic error.
+    # pydantic's ValidationError, not an Anthropic error. _parse turns it into ours,
+    # so the endpoint answers 503 "try again" instead of a bare 500.
     def cut_off(**_kwargs):
         TicketSet.model_validate_json('{"project_title": "Calc", "description": "A calc')
 
     use_client(monkeypatch, cut_off)
-    with pytest.raises(ReviewerError):  # _parse turns it into our error, not the last-resort catch
-        reviewer._parse("system", [], TicketSet, effort="low")
-    assert reviewer.generate_tickets("A calculator").is_fallback is True
-
-
-def test_unexpected_errors_still_fall_back(monkeypatch: pytest.MonkeyPatch) -> None:
-    def boom(**_kwargs):
-        raise RuntimeError("something we didn't foresee")
-
-    use_client(monkeypatch, boom)
-    assert reviewer.generate_tickets("A calculator").is_fallback is True
+    with pytest.raises(ReviewerError):
+        reviewer.generate_tickets("A calculator")
 
 
 def test_a_bad_key_is_logged_as_an_error(monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture) -> None:
@@ -92,17 +86,16 @@ def test_a_bad_key_is_logged_as_an_error(monkeypatch: pytest.MonkeyPatch, caplog
         )
 
     use_client(monkeypatch, unauthorized)
-    with caplog.at_level(logging.WARNING):
-        assert reviewer.generate_tickets("A calculator").is_fallback is True
+    with caplog.at_level(logging.WARNING), pytest.raises(ReviewerError):
+        reviewer.generate_tickets("A calculator")
     assert any(r.levelno == logging.ERROR and "401" in r.getMessage() for r in caplog.records)
 
 
 def test_a_long_summary_is_trimmed_at_a_sentence(monkeypatch: pytest.MonkeyPatch) -> None:
     sentence = "This sentence is exactly fifty characters long ok. "
-    long = TicketSet(project_title="X", description=sentence * 20, tickets=FALLBACK_TICKETS.tickets)
+    long = TicketSet(project_title="X", description=sentence * 20, tickets=THREE_TICKETS)
     monkeypatch.setattr(reviewer, "_parse", lambda *a, **k: long)
     result = reviewer.generate_tickets("An idea")
-    assert result.is_fallback is False
     assert len(result.description) <= reviewer.MAX_SUMMARY_CHARS
     assert result.description.endswith(".")
 
@@ -121,12 +114,6 @@ def test_client_uses_the_key_from_settings(monkeypatch: pytest.MonkeyPatch) -> N
 def test_the_key_never_shows_in_settings_repr(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(reviewer.settings, "anthropic_api_key", SecretStr("test-key-from-settings"))
     assert "test-key-from-settings" not in repr(reviewer.settings)
-
-
-def test_fallback_puts_the_expression_ticket_first() -> None:
-    # The demo PR is written against this ticket, and "first not done" must land on it.
-    assert FALLBACK_TICKETS.tickets[0].title == "Evaluate a whole expression"
-    assert 3 <= len(FALLBACK_TICKETS.tickets) <= 5
 
 
 # --- Comprehension questions in the review -------------------------------------
