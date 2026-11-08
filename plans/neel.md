@@ -59,7 +59,7 @@ Next: test the whole app end to end once Param's `POST /api/projects` and screen
 
 ## Blocked / need from Param
 
-- Raised with Param in #10: `progress.gate_score` counts every question on the gate across pushes. The webhook now deletes a push's unanswered questions when a new one lands, so the demo works, but if a learner answers on push 1 and then pushes again, those old answers still count. It should only look at the latest push's questions (`Question.review_id`). Older note: `progress.gate_score` averages the latest scores, but the pass rule is every question ≥ 70, so the skill-points check there should use the minimum. `schemas.py` also imports `TicketStatus` from `services/progress.py`; the contract file shouldn't depend on a service
+- None. The `gate_score` and `TicketStatus` notes from #10 are done: Param switched `gate_score` to the minimum and moved `TicketStatus` into `models.py` in #14, and #13 counts only the latest push's questions
 
 ## Wiring into the skeleton (PR #2 is merged)
 
