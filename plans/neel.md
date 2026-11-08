@@ -8,24 +8,25 @@ The GitHub + AI pipeline: everything that talks to GitHub or Claude. I meet Para
 
 ## Now
 
-M1: `reviewer.py` has `generate_tickets` and `review_diff` working against the demo diff (on `feat/reviewer`). Next: the webhook and GitHub client. PR #2 (backend skeleton) is merged.
+M1: `reviewer.py` (`generate_tickets` with its cached fallback, and `review_diff`) is in PR #4, waiting on Param's review. PR #2 (backend skeleton) is merged, so next is wiring the reviewer into it, then the webhook and GitHub client.
 
 ## Next
 
 ### M0: Skeleton + contract
 
-- [ ] Agree `models.py`, `schemas.py` and the API contract with Param (together, first thing)
+- [x] Agree `models.py`, `schemas.py` and the API contract with Param (merged in PR #2)
 - [x] ~~FastAPI skeleton~~ Param built it in PR #2
 - [x] Create the GitHub App: pull requests read/write, contents read, subscribed to `pull_request`. Private key path and webhook secret go in `.env`
 - [x] smee.io channel forwarding to local `/webhooks/github`. Confirm a ping arrives
 - [x] Claude API key in `.env`. One test `messages.parse` call that returns a Pydantic model
-- [x] Demo practice repo: the seeded calculator project, the default demo project. Prepare a demo PR with a real flaw, e.g. `eval()` on user input (code injection)
+- [x] Demo practice repo with a demo PR that has a real flaw: `eval()` on user input (code injection). No longer seeded: on stage it's linked through the idea form
+- [ ] Check the demo PR still fits the expression ticket in `FALLBACK_TICKETS` (`CalculatorError`, divide by zero), and add an input-length cap to `demo/evaluate-fix` (see Notes)
 
 ### M1: Live review + tickets
 
 - [ ] `POST /webhooks/github`: verify `X-Hub-Signature-256`, handle `pull_request` opened and synchronize, return 200 fast and do the work in a background task
-- [ ] Fetch the PR diff and match it to the learner and ticket: `Ticket: #<id>` in the PR description, else the learner's first ticket that isn't done
-- [x] `reviewer.generate_tickets(idea)`: Claude turns a project idea into 3–5 tickets (title, why, acceptance criteria, skill areas), never the how. Param's `POST /api/projects` calls it. Fall back to the calculator's tickets if Claude fails (the fallback itself is still to do, see M3)
+- [ ] Fetch the PR diff and match it to the learner and ticket: `Ticket: #<id>` in the PR description, else the learner's first ticket that isn't done. On stage, read the id off the dashboard and type it into the demo PR
+- [x] `reviewer.generate_tickets(idea)`: Claude turns a project idea into 3–5 tickets (title, why, acceptance criteria, skill areas), never the how, with the core-feature ticket first. Param's `POST /api/projects` calls it. Falls back to the calculator's tickets if Claude fails (see M3)
 - [x] Review prompt returning the `Review` model: Socratic questions, security and correctness findings (class, file, line), hint ladder, policy flags against the one fixed AI rule (the AI never writes your code)
 - [ ] Don't create a second `Finding` when a later push finds the same vulnerability again, so a fix is only counted once
 - [x] Enforce "no full corrected code": a rule in the prompt, plus rejecting snippets longer than about 5 lines (one retry, then `ReviewerError`)
@@ -56,12 +57,13 @@ M1: `reviewer.py` has `generate_tickets` and `review_diff` working against the d
 
 ## Blocked / need from Param
 
-- M0: PR #2 reworked for no levels, and his OK on the no-levels contract in project-plan.md
-- M2: `progress.record_gate_pass()` to call when a gate passes (in PR #2)
+- Review of PR #4 (reviewer service) and PR #5 (plan update: no seeded projects)
+- A decision on who adds `is_fallback` to `schemas.py` (see M3)
+- Raise with Param (not posted yet): `progress.gate_score` averages the latest scores, but the pass rule is every question ≥ 70, so the skill-points check there should use the minimum. `schemas.py` also imports `TicketStatus` from `services/progress.py`; the contract file shouldn't depend on a service
 
-## Todo once PR #2 merges
+## Wiring into the skeleton (PR #2 is merged)
 
-`reviewer.py` is standalone so it could be built before the skeleton. When PR #2 lands:
+`reviewer.py` was built standalone, before the skeleton existed. Now:
 
 - [x] Add `anthropic` to `backend/pyproject.toml` (shared file, Param told in the PR #2 approval)
 - [ ] Add `anthropic_api_key` to `config.Settings` and pass it to `anthropic.Anthropic(api_key=...)`. Right now the SDK reads it from the environment, which only works with `uv run --env-file .env`
