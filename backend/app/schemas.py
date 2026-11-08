@@ -4,7 +4,7 @@ The frontend generates its TypeScript types from these through /openapi.json,
 so this file is the single source of truth. Neel's gate and flag models go here too.
 """
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.models import FindingKind, GateStatus, SkillArea
 from app.services.progress import TicketStatus
@@ -28,13 +28,21 @@ class SkillOut(BaseModel):
 class ProjectRef(BaseModel):
     id: int
     title: str
+    description: str  # Claude's summary of the idea, so the learner sees how it was understood
 
 
-class TicketOut(BaseModel):
+class TicketBase(BaseModel):
+    """The ticket fields every response shares."""
+
     id: int
     title: str
     why: str
     acceptance_criteria: list[str]
+
+
+class TicketOut(TicketBase):
+    """A ticket on the dashboard: the shared fields plus where the learner is with it."""
+
     status: TicketStatus
 
 
@@ -121,3 +129,38 @@ class AnswersOut(BaseModel):
     # true when every question on the latest push has passed: the PR is approved
     passed: bool
     results: list[AnswerResult]
+
+
+# --- POST /api/projects ---
+
+
+class ProjectIn(BaseModel):
+    # Trim spaces from every string before validating, so "   " counts as empty.
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    idea: str = Field(min_length=1, max_length=1000)
+    # GitHub "owner/name": owner is letters, digits and hyphens (max 39, no leading hyphen);
+    # name is letters, digits, ".", "_" and "-" (max 100).
+    repo_full_name: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9-]{0,38}/[A-Za-z0-9._-]{1,100}$")
+
+    @field_validator("repo_full_name")
+    @classmethod
+    def repo_name_is_not_only_dots(cls, value: str) -> str:
+        # The pattern allows dots, so "owner/." and "owner/.." would match. GitHub doesn't allow
+        # those names, and ".." in an API URL could point at a different endpoint (path traversal).
+        name = value.split("/")[1]
+        if set(name) == {"."}:
+            raise ValueError("repo name can't be only dots")
+        return value
+
+
+class ProjectOut(BaseModel):
+    """The project just created, with the tickets generated from the idea."""
+
+    id: int
+    title: str
+    # Claude's one-paragraph summary of how it understood the idea (at most 500 characters)
+    description: str
+    # True when Claude was unavailable and these are the cached example tickets
+    is_fallback: bool
+    tickets: list[TicketBase]

@@ -10,7 +10,7 @@ from collections.abc import Iterator
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.pool import StaticPool
-from sqlmodel import Session, SQLModel, create_engine, select
+from sqlmodel import Session, SQLModel, col, create_engine, func, select
 
 import app.models  # noqa: F401  (registers the tables)
 from app.db import get_session
@@ -31,8 +31,42 @@ from app.models import (
     SubmissionStatus,
     Ticket,
 )
+from app.routers.learner import get_ticket_generator
 from app.seed import seed
 from app.services import progress
+from app.services.reviewer import ReviewerError, TicketDraft, TicketResult
+
+# What the fake ticket generator returns: a known, fixed answer instead of a live Claude call.
+FAKE_TICKETS = TicketResult(
+    project_title="Habit tracker",
+    description="A habit tracker for students who want to build daily routines and see their streaks.",
+    tickets=[
+        TicketDraft(
+            title="Add a habit",
+            why="Nothing else works until a learner can record what they want to track.",
+            acceptance_criteria=["A habit with a name can be added", "An empty name is rejected"],
+            skill_areas=[SkillArea.backend, SkillArea.database],
+        ),
+        TicketDraft(
+            title="Mark a habit done for today",
+            why="Ticking a habit off is the core daily action.",
+            acceptance_criteria=["Marking done twice on the same day counts once"],
+            skill_areas=[SkillArea.backend, SkillArea.testing],
+        ),
+        TicketDraft(
+            title="Show the current streak",
+            why="Seeing a streak is what keeps people coming back.",
+            acceptance_criteria=["The streak resets after a missed day"],
+            skill_areas=[SkillArea.frontend, SkillArea.debugging],
+        ),
+    ],
+    is_fallback=False,
+)
+
+
+def fake_generate_tickets(idea: str) -> TicketResult:
+    """Stands in for reviewer.generate_tickets in tests: instant, free, and always the same."""
+    return FAKE_TICKETS
 
 
 @pytest.fixture
@@ -47,6 +81,8 @@ def session() -> Iterator[Session]:
 @pytest.fixture
 def client(session: Session) -> Iterator[TestClient]:
     app.dependency_overrides[get_session] = lambda: session
+    # Every test client uses the fake, so no test can ever call Claude by accident.
+    app.dependency_overrides[get_ticket_generator] = lambda: fake_generate_tickets
     yield TestClient(app)
     app.dependency_overrides.clear()
 
@@ -276,3 +312,130 @@ def test_skills_never_go_above_100(session: Session, tickets: list[Ticket]) -> N
     session.commit()
     pass_ticket(session, tickets[0])
     assert skill.score == 100
+
+
+# --- POST /api/projects ---
+
+GOOD_BODY = {"idea": "A habit tracker for students", "repo_full_name": "param-m1/habits"}
+
+
+def use_generator(fn) -> list[str]:  # type: ignore[no-untyped-def]
+    """Swap in a different fake ticket generator for one test. Returns the ideas it was called with."""
+    calls: list[str] = []
+
+    def recording(idea: str) -> TicketResult:
+        calls.append(idea)
+        return fn(idea)
+
+    app.dependency_overrides[get_ticket_generator] = lambda: recording
+    return calls
+
+
+def count(session: Session, model) -> int:  # type: ignore[no-untyped-def]
+    return session.exec(select(func.count(col(model.id)))).one()
+
+
+def test_create_project_saves_it_and_returns_201(client: TestClient, session: Session) -> None:
+    r = client.post("/api/projects", json={"idea": "  A habit tracker for students  ", "repo_full_name": "param-m1/habits"})
+    assert r.status_code == 201
+    body = r.json()
+    assert set(body) == {"id", "title", "description", "is_fallback", "tickets"}  # matches the contract exactly
+    assert body["title"] == "Habit tracker"
+    assert body["description"] == FAKE_TICKETS.description
+    assert body["is_fallback"] is False
+    assert [t["title"] for t in body["tickets"]] == ["Add a habit", "Mark a habit done for today", "Show the current streak"]
+    assert all(set(t) == {"id", "title", "why", "acceptance_criteria"} for t in body["tickets"])  # no status here
+
+    project = session.get(Project, body["id"])
+    assert project is not None
+    assert project.learner_id == progress.current_learner(session).id  # it's mine
+    assert project.idea == "A habit tracker for students"  # trimmed
+    assert project.repo_full_name == "param-m1/habits"
+    tickets = session.exec(select(Ticket).where(Ticket.project_id == project.id).order_by(col(Ticket.position))).all()
+    assert [t.position for t in tickets] == [1, 2, 3]
+    assert tickets[0].skill_areas == [SkillArea.backend, SkillArea.database]  # copied from the draft
+
+
+def test_new_project_shows_on_the_dashboard(client: TestClient) -> None:
+    created = client.post("/api/projects", json=GOOD_BODY).json()
+    body = client.get("/api/dashboard").json()
+    assert body["current_project"] == {"id": created["id"], "title": "Habit tracker", "description": FAKE_TICKETS.description}
+    assert [t["status"] for t in body["tickets"]] == ["todo", "todo", "todo"]
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"idea": "", "repo_full_name": "param-m1/habits"},
+        {"idea": "   ", "repo_full_name": "param-m1/habits"},
+        {"idea": "x" * 1001, "repo_full_name": "param-m1/habits"},
+        {"idea": "A habit tracker"},
+        {"idea": "A habit tracker", "repo_full_name": "habits"},
+        {"idea": "A habit tracker", "repo_full_name": "param-m1/habits/extra"},
+        {"idea": "A habit tracker", "repo_full_name": "-param/habits"},
+        {"idea": "A habit tracker", "repo_full_name": "https://github.com/param-m1/habits"},
+        {"idea": "A habit tracker", "repo_full_name": "param-m1/.."},
+    ],
+)
+def test_bad_input_is_rejected_before_claude(client: TestClient, session: Session, body: dict) -> None:
+    calls = use_generator(lambda idea: FAKE_TICKETS)
+    assert client.post("/api/projects", json=body).status_code == 422
+    assert calls == []  # never asked Claude
+    assert count(session, Project) == 0
+
+
+def test_repeating_the_same_project_returns_it_without_calling_claude(client: TestClient, session: Session) -> None:
+    calls = use_generator(lambda idea: FAKE_TICKETS)
+    first = client.post("/api/projects", json=GOOD_BODY)
+    again = client.post("/api/projects", json=GOOD_BODY)
+    assert (first.status_code, again.status_code) == (201, 200)
+    assert again.json() == first.json()
+    assert len(calls) == 1
+    assert count(session, Project) == 1
+
+
+def test_same_idea_with_a_different_repo_is_a_new_project(client: TestClient, session: Session) -> None:
+    client.post("/api/projects", json=GOOD_BODY)
+    r = client.post("/api/projects", json={**GOOD_BODY, "repo_full_name": "param-m1/habits-v2"})
+    assert r.status_code == 201
+    assert count(session, Project) == 2
+
+
+def test_a_simultaneous_duplicate_is_caught_by_the_database(client: TestClient, session: Session) -> None:
+    """A double-click: while this request waits on Claude, another one saves the same project."""
+    learner_id = progress.current_learner(session).id
+
+    def other_request_wins(idea: str) -> TicketResult:
+        session.add(Project(
+            learner_id=learner_id, idea=GOOD_BODY["idea"], title="Saved by the other click",  # type: ignore[arg-type]
+            description="d", repo_full_name=GOOD_BODY["repo_full_name"],
+        ))
+        session.commit()
+        return FAKE_TICKETS
+
+    use_generator(other_request_wins)
+    r = client.post("/api/projects", json=GOOD_BODY)
+    assert r.status_code == 200
+    assert r.json()["title"] == "Saved by the other click"  # we got theirs back
+    assert count(session, Project) == 1  # and no duplicate
+    assert count(session, Ticket) == 0  # our tickets were rolled back with our project
+
+
+def test_claude_failing_returns_503_and_saves_nothing(client: TestClient, session: Session) -> None:
+    def claude_is_down(idea: str) -> TicketResult:
+        raise ReviewerError("Claude timed out")
+
+    use_generator(claude_is_down)
+    r = client.post("/api/projects", json=GOOD_BODY)
+    assert r.status_code == 503
+    assert r.json() == {"detail": "Couldn't create tickets right now. Try again in a minute."}
+    assert "timed out" not in r.text  # the internal reason stays on the server
+    assert count(session, Project) == 0
+
+
+def test_fallback_tickets_are_marked_as_such(client: TestClient, session: Session) -> None:
+    use_generator(lambda idea: FAKE_TICKETS.model_copy(update={"is_fallback": True}))
+    body = client.post("/api/projects", json=GOOD_BODY).json()
+    assert body["is_fallback"] is True
+    project = session.get(Project, body["id"])
+    assert project is not None and project.is_fallback is True  # survives a reload
