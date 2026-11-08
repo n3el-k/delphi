@@ -24,7 +24,7 @@ Next: run the whole loop live through the app (idea → tickets → demo PR → 
 - [x] smee.io channel forwarding to local `/webhooks/github`. Confirm a ping arrives
 - [x] Claude API key in `.env`. One test `messages.parse` call that returns a Pydantic model
 - [x] Demo practice repo with a demo PR that has a real flaw: `eval()` on user input (code injection). No longer seeded: on stage it's linked through the idea form
-- [x] Check the demo PR still fits the expression ticket in `FALLBACK_TICKETS` (`CalculatorError`, divide by zero), and add an input-length cap to `demo/evaluate-fix` (see Notes). All four acceptance criteria hold on the fix branch. The cap (200 characters) is a second commit on `demo/evaluate-fix`, so the fix push is now 2 commits
+- [x] Check the demo PR still fits the expression ticket (now `EXPRESSION_TICKET` in `scripts/try_reviewer.py`) (`CalculatorError`, divide by zero), and add an input-length cap to `demo/evaluate-fix` (see Notes). All four acceptance criteria hold on the fix branch. The cap (200 characters) is a second commit on `demo/evaluate-fix`, so the fix push is now 2 commits
 
 ### M1: Live review + tickets
 
@@ -52,6 +52,7 @@ Next: run the whole loop live through the app (idea → tickets → demo PR → 
 - [x] Cached fallback tickets for the calculator: `generate_tickets` returns them with `is_fallback=True` when Claude fails, with a 20s timeout and one SDK retry (~40s worst case). It never raises: cut-off JSON and unexpected errors fall back too, and a bad key is logged as an error. The expression ticket comes first, matching the demo PR
 - [ ] ~~Cached review and questions for the demo PR~~ Dropped for now: test the whole app first, and only add it if Claude turns out to be unreliable (see Decisions)
 - [x] Agree who adds `is_fallback`: Param adds it to the `POST /api/projects` response and a `Project` column, in the `POST /api/projects` PR
+- [x] Removed every cached fallback (tickets and `is_fallback`): `generate_tickets` raises and `POST /api/projects` answers 503. The gate page says how to retry after 90s in review (see Decisions)
 
 ### M4: Polish + submit
 

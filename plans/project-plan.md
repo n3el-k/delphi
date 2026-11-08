@@ -26,7 +26,7 @@ There are no levels in the MVP. One fixed AI rule applies to everyone: the AI tu
 - Auth and signup: one seeded learner, no real login.
 - Assessment and notifications.
 - No seeded projects. The learner starts with an empty dashboard and creates their first project from an idea. On stage we type a calculator idea. The `eval()` finding comes from the demo PR's code, which we write in advance, so it doesn't depend on the live tickets.
-- Fallback tickets: if Claude is slow or down, `generate_tickets` returns cached calculator tickets (the expression ticket first) with `is_fallback: true`, and the UI labels them as example tickets with a "Try again" button.
+- No cached fallbacks. If Claude is slow or down, `POST /api/projects` returns 503 and the learner tries again. The recorded backup video covers a demo that fails on stage.
 - The demo practice repo is created on GitHub in advance and linked through the idea form like any learner's repo. It isn't seeded.
 
 ### Nice to have (only once the must-haves work end to end)
@@ -82,7 +82,7 @@ Each call returns a Pydantic model, so the API, the DB and the frontend all shar
 3. **Questions** (diff) → 2–3 questions about the learner's own lines.
 4. **Grade** (question, diff, answer) → score 0–100, passed, explanation of the grade, next hint if failed.
 
-Rules: never full corrected code (enforced in the prompt and by rejecting long snippets). Check `stop_reason` for refusals. Keep cached known-good output as a fallback for judging: the calculator's tickets, and the review and questions for the demo PR.
+Rules: never full corrected code (enforced in the prompt and by rejecting long snippets). Check `stop_reason` for refusals. No cached output: a failed call raises `ReviewerError`, and the caller tells the learner to try again.
 
 ### Folder structure
 
@@ -132,10 +132,9 @@ GET /api/me
 
 POST /api/projects
 ← { idea, repo_full_name }                   idea: 1–1000 chars, repo: "owner/name"
-→ { id, title, description, is_fallback, tickets: [{ id, title, why, acceptance_criteria: [str] }] }
+→ { id, title, description, tickets: [{ id, title, why, acceptance_criteria: [str] }] }
                                              description: Claude's one-paragraph summary of the idea (who it's for, core features), at most 500 chars
-                                             is_fallback: true when Claude was unavailable and these are the cached example tickets
-                                             calls Neel's reviewer.generate_tickets(idea), which never raises
+                                             calls Neel's reviewer.generate_tickets(idea). If Claude fails: 503, try again
 
 GET /api/dashboard
 → { skills: [{ area, score }],
@@ -156,7 +155,7 @@ GET /api/portfolio
 GET /api/gates/{id}
 → { id, status: "reviewing" | "open" | "passed",
     pr_url, ticket_title,
-    review: { id, summary, is_fallback } | null,
+    review: { id, summary } | null,
     findings: [{ id, kind, vuln_class, file, line, explanation,
                  socratic_question, hints: [str], resolved }],
     questions: [{ id, text, file, line,
@@ -188,10 +187,8 @@ POST /webhooks/github                        GitHub only. Verifies the signature
 Projects and tickets (from the learner's idea):
 
 ```
-Project       id, learner_id → Learner, idea, title, description, repo_full_name,
-              is_fallback (bool)
-              (description holds Claude's summary of the idea, shown on the dashboard, ≤ 500 chars.
-               is_fallback marks the cached example tickets, so the label survives a reload)
+Project       id, learner_id → Learner, idea, title, description, repo_full_name
+              (description holds Claude's summary of the idea, shown on the dashboard, ≤ 500 chars)
 Ticket        id, project_id → Project, position, title, why,
               acceptance_criteria (JSON list), skill_areas (JSON list),
               label (core | delegable | null)
@@ -216,7 +213,7 @@ Submission    id, learner_id, ticket_id, repo_full_name, pr_number, pr_url,
               unique (repo_full_name, pr_number)
               status: reviewing | awaiting_gate | approved
 Review        id, submission_id, head_sha, summary, policy_flags (JSON),
-              github_comment_id, is_fallback (bool), created_at
+              github_comment_id, created_at
 Finding       id, review_id, kind (security | correctness), vuln_class,
               file, line, explanation, socratic_question,
               hints (JSON: [concept, where_to_look, snippet]),
@@ -275,7 +272,7 @@ Each one ends in something we can demo.
 | Innovation & Creativity | An AI senior reviewer that won't merge your PR until you prove you understand it. Understanding is enforced at merge time instead of being an opt-in "learning mode", and the AI never writes your code. |
 | Impact & Relevance | Teaches what AI can't replace (debugging, security judgment, full-stack breadth). Networks come from matched teams, volunteer pros and nonprofit clients. |
 | Feasibility & Scalability | Runs on real GitHub PRs with a standard stack. SQLModel moves to Postgres without code changes. |
-| Technical Execution | A live end-to-end loop, structured AI output, a stable seeded demo with fallbacks. |
+| Technical Execution | A live end-to-end loop, structured AI output, a stable seeded demo with timeouts and clear retry states. |
 | UX & Design | From idea to tickets in one step, a clear dashboard, shadcn/ui polish, accessible from the start. |
 
 **Sidepots:**
@@ -324,14 +321,15 @@ Record decisions here so neither of us re-argues them at 3am.
 | Every change, `plans/` included, goes through a PR reviewed by the other person | Keeps `main` working and both of us aware of every change | 2026-11-07 |
 | No levels in the MVP. The learner gives a project idea, Claude makes the tickets, and one fixed rule applies: the AI never writes your code. Levels come back if there's time | Promotion can't be shown in a demo, and the GitHub loop is what has to work. The ladder stays in the pitch as the vision | 2026-11-07 |
 | Answer scores are 0–100. A gate passes when every question's latest score is ≥ 70 | One rule for passing, with skill points only on a real pass | 2026-11-07 |
-| A PR names its ticket with `Ticket: #<id>` in the description. Without one, the webhook takes the first ticket that isn't done in the newest project linked to the PR's repo. `generate_tickets` puts the core-feature ticket first, so the fallback lands on it. On stage, read the id off the dashboard and type it into the demo PR | `Submission.ticket_id` is required, and the webhook needs to know which ticket the PR is for. Matching by title is fragile with live Claude output | 2026-11-07 |
+| A PR names its ticket with `Ticket: #<id>` in the description. Without one, the webhook takes the first ticket that isn't done in the newest project linked to the PR's repo. `generate_tickets` puts the core-feature ticket first, so this default lands on it. On stage, read the id off the dashboard and type it into the demo PR | `Submission.ticket_id` is required, and the webhook needs to know which ticket the PR is for. Matching by title is fragile with live Claude output | 2026-11-07 |
 | Project idea is one free-text box, no intake form. Claude returns a summary of how it understood the idea plus the tickets, and the dashboard shows the summary | Least friction for the learner and the smallest contract change. Showing the summary makes the AI's reading of the idea transparent. If it misread the idea, the learner submits a new one (no editing in the MVP) | 2026-11-07 |
 | No seeded projects. The seed is one learner and a starting skill map. The dashboard's current project is the newest one that isn't done | A seeded project would hide the one created from an idea on stage. The `eval()` finding comes from the demo PR's code, not the ticket | 2026-11-07 |
-| If Claude fails, `generate_tickets` returns cached calculator tickets with `is_fallback: true`, after a 20s timeout and one retry (~40s worst case). It never raises. Param adds `is_fallback` to the `POST /api/projects` response and a `Project` column | Retrying alone doesn't help when the Wi-Fi, key or credits are the problem. The flag lets the UI say so honestly, and the column keeps the label after a reload | 2026-11-07 |
+| ~~If Claude fails, `generate_tickets` returns cached calculator tickets with `is_fallback: true`, after a 20s timeout and one retry (~40s worst case). It never raises. Param adds `is_fallback` to the `POST /api/projects` response and a `Project` column~~ Replaced by "No cached fallbacks" below | Retrying alone doesn't help when the Wi-Fi, key or credits are the problem. The flag lets the UI say so honestly, and the column keeps the label after a reload | 2026-11-07 |
 | The idea summary is at most 500 characters: Claude is asked for 400 and the result is trimmed at a sentence end | The dashboard card needs a predictable size. Trimming beats throwing away good tickets over a long summary | 2026-11-07 |
 | _Proposed:_ The comprehension questions come from the review call, not a fourth call. Each push gets its own 2–3 questions (`Question.review_id`), and the gate shows the latest push's. A security finding on the latest push blocks the pass until it's fixed, and the next push asks the learner to explain the fix | One Claude call keeps the gate opening at ~30s on stage, and questions can point at findings. The brief says a security issue has to be fixed and explained, not just answered around. Older questions stay as grade history | 2026-11-07 |
-| No cached fallback review for the demo PR for now. Test the whole app end to end first, and add one only if Claude proves unreliable | Tickets already have a fallback. A canned review is extra code for a failure we haven't seen: every live review so far finished in ~30s | 2026-11-07 |
+| ~~No cached fallback review for the demo PR for now. Test the whole app end to end first, and add one only if Claude proves unreliable~~ Replaced by "No cached fallbacks" below | Tickets already have a fallback. A canned review is extra code for a failure we haven't seen: every live review so far finished in ~30s | 2026-11-07 |
 | No TanStack Query. The frontend fetches with plain `fetch` in one small hook (`useApi` in `frontend/src/lib/api.ts`). shadcn/ui and lucide-react stay | One less library and set of ideas to learn (query keys, cache invalidation) on four pages that don't share data. shadcn/ui stays because the look and the Radix accessibility matter for two judging areas. The cost: no cache, so going back to a page shows a loading state again | 2026-11-07 |
+| No cached fallbacks anywhere. `generate_tickets` raises `ReviewerError` like the other calls, and `POST /api/projects` answers 503 "try again". `is_fallback` is gone from `Project`, `Review` and the API. A review that fails leaves the gate in `reviewing`, and after 90s the gate page says how to retry (reopen the PR or push) | Canned tickets for a calculator are wrong for any other idea, and they hide a real outage behind fake output. A clear error and a retry are more honest, which is the transparency story. The backup video covers a failure on stage | 2026-11-08 |
 
 ## Open questions
 

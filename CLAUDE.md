@@ -48,7 +48,7 @@ We're a security and accessibility product, so our own code has to pass the stan
 - **Accessibility:** semantic HTML, a label on every input, full keyboard navigation with a visible focus ring, WCAG AA contrast. Use the shadcn/ui components rather than hand-rolled divs. Check each new page with axe or Lighthouse.
 - **Transparency and privacy:** store only what the app needs. Every AI grade and finding carries its explanation, and every review can be flagged.
 - **The AI reviewer never posts full corrected code.** Hints follow the ladder: concept → where to look → small illustrative snippet.
-- **Demo stability:** seeded data, timeouts on every external call, and a fallback for the demo path if Claude or GitHub is slow.
+- **Demo stability:** seeded data and a timeout on every external call. No cached fallbacks: if Claude or GitHub fails, tell the learner plainly and let them retry.
 
 ## Stack
 
