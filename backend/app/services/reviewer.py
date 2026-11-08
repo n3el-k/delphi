@@ -185,11 +185,13 @@ class ReviewerError(Exception):
 # Who the reviewer and grader are talking to, shared so the questions and the grading of the
 # answers expect the same depth. The questions stay technical, but at a beginner's level.
 LEARNER_LEVEL = """Who you're talking to: someone new to programming, working on their first projects.
-- Ask about one idea at a time, in plain words: what this code does with a given input, why it's
-  safe or unsafe, what happens in an edge case, why they chose this approach.
-- Keep it technical, but don't make the answer depend on jargon or library internals. Ask "what
-  does your code do with this input?", not "what node type does ast.parse build?". Ask "why can't
-  this input run as code any more?", not "trace this input through every branch".
+- Ask about one idea at a time, in plain words.
+- Ask mostly about behaviour: what their program does with a given input, and why. "What does your
+  program do now if someone types X, and why can't it run?" is better than "which check in
+  _work_out rejects X?". At most one question may point at a specific line, check or function,
+  and it must be answerable by saying in plain words what that code does, not by naming parts.
+- Keep it technical, but don't make the answer depend on jargon or library internals: not "what
+  node type does ast.parse build?", not "trace this input through every branch".
 - A good answer is 2-3 sentences in everyday words."""
 
 TICKETS_SYSTEM = f"""You write tickets for a learner who is new to software engineering.
@@ -242,7 +244,8 @@ questions: {MIN_QUESTIONS}-{MAX_QUESTIONS} comprehension questions that check th
 code: what a line does, why they chose an approach, what happens with an edge case. Point each one
 at a file and line where you can. Never ask them to write code, and never put the answer to a
 finding in a question. If a previous review is given and this diff fixes one of its findings,
-at least one question must ask them to explain how their change fixes it.
+at least one question must ask them to explain how their change fixes it, in behaviour terms:
+what happens now with the kind of input that caused the problem, and why.
 
 policy_flags: note anything that breaks the AI rule (e.g. the PR description says the AI wrote it)
 or work clearly outside the ticket. Leave it empty if there's nothing."""
