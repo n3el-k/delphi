@@ -8,7 +8,7 @@ The GitHub + AI pipeline: everything that talks to GitHub or Claude. I meet Para
 
 ## Now
 
-M1: `reviewer.py` has `generate_tickets` and `review_diff` working against the demo diff (on `feat/reviewer`). Next: the webhook and GitHub client. PR #2 is still being reworked.
+M1: `reviewer.py` has `generate_tickets` and `review_diff` working against the demo diff (on `feat/reviewer`). Next: the webhook and GitHub client. PR #2 (backend skeleton) is merged.
 
 ## Next
 
@@ -63,7 +63,7 @@ M1: `reviewer.py` has `generate_tickets` and `review_diff` working against the d
 
 `reviewer.py` is standalone so it could be built before the skeleton. When PR #2 lands:
 
-- [ ] Ask Param to add `anthropic` to `backend/pyproject.toml` (shared file), or do it in a small PR after telling him
+- [x] Add `anthropic` to `backend/pyproject.toml` (shared file, Param told in the PR #2 approval)
 - [ ] Add `anthropic_api_key` to `config.Settings` and pass it to `anthropic.Anthropic(api_key=...)`. Right now the SDK reads it from the environment, which only works with `uv run --env-file .env`
 - [ ] Replace the `SkillAreaName` Literal in `reviewer.py` with `models.SkillArea`
 - [ ] Map `ReviewResult` onto `Review` + `Finding` rows (`hints` = `[concept, where_to_look, snippet]`) and `TicketSet` onto `Project` + `Ticket`

@@ -1,9 +1,9 @@
 """Run the reviewer's Claude calls against the demo calculator and print the results.
 
-Run from backend/ (there's no pyproject on main yet, so uv pulls the deps in):
+Run from backend/:
 
-    uv run --env-file .env --with anthropic --with pydantic python -m scripts.try_reviewer
-    uv run --env-file .env --with anthropic --with pydantic python -m scripts.try_reviewer review
+    uv run --env-file .env python -m scripts.try_reviewer
+    uv run --env-file .env python -m scripts.try_reviewer review
 
 It makes real API calls, so each run costs a little.
 """

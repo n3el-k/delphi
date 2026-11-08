@@ -3,8 +3,8 @@
 Every call returns a Pydantic model through `messages.parse`, so the output is
 checked against our schema before any of our code touches it.
 
-This file is standalone on purpose: it doesn't import `models.py` or `config.py`
-yet, so it can be built and tested before the backend skeleton (PR #2) lands.
+It doesn't import `models.py` or `config.py` yet: it was built before the backend
+skeleton (PR #2) landed, and wiring those in is a follow-up.
 The Anthropic SDK reads ANTHROPIC_API_KEY from the environment by itself.
 """
 
