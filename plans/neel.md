@@ -60,7 +60,7 @@ Previously: M1: `reviewer.py` (`generate_tickets` with its cached fallback, and 
 ## Blocked / need from Param
 
 - Re-review of PR #4 (reviewer service) and review of the plan update PR (no seeded projects)
-- Raise with Param (in the gate part 2 PR): `progress.gate_score` counts every question on the gate across pushes. The webhook now deletes a push's unanswered questions when a new one lands, so the demo works, but if a learner answers on push 1 and then pushes again, those old answers still count. It should only look at the latest push's questions (`Question.review_id`). Older note: `progress.gate_score` averages the latest scores, but the pass rule is every question ≥ 70, so the skill-points check there should use the minimum. `schemas.py` also imports `TicketStatus` from `services/progress.py`; the contract file shouldn't depend on a service
+- Done in the portfolio PR (Param to confirm there): `gate_score` now looks only at the latest push and takes the minimum. Original note from #10: `progress.gate_score` counts every question on the gate across pushes. The webhook now deletes a push's unanswered questions when a new one lands, so the demo works, but if a learner answers on push 1 and then pushes again, those old answers still count. It should only look at the latest push's questions (`Question.review_id`). Older note: `progress.gate_score` averages the latest scores, but the pass rule is every question ≥ 70, so the skill-points check there should use the minimum. `schemas.py` also imports `TicketStatus` from `services/progress.py`; the contract file shouldn't depend on a service
 
 ## Wiring into the skeleton (PR #2 is merged)
 
