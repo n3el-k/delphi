@@ -36,3 +36,10 @@ venv/
 
 # Claude Code local files
 .claude/settings.local.json
+
+# Keys and local databases: never commit these, even by accident
+*.pem
+*.key
+*.db
+*.sqlite
+*.sqlite3
