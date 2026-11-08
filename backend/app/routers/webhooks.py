@@ -19,6 +19,7 @@ from sqlmodel import Session, col, func, select
 from app.config import settings
 from app.db import get_session
 from app.models import (
+    Answer,
     Finding,
     FindingKind,
     Gate,
@@ -266,6 +267,11 @@ def review_submission(engine: Engine, submission_id: int, head_sha: str) -> None
         session.flush()  # gives the findings ids, so questions can point at them
 
         gate = session.exec(select(Gate).where(Gate.submission_id == submission_id)).one()
+        # Questions about older code that were never answered have no history worth keeping,
+        # and leaving them would make the gate look unfinished. Answered ones stay.
+        for old in session.exec(select(Question).where(Question.gate_id == gate.id)).all():
+            if session.exec(select(Answer.id).where(Answer.question_id == old.id)).first() is None:
+                session.delete(old)
         session.add_all(
             Question(
                 gate_id=gate.id,  # type: ignore[arg-type]

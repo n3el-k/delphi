@@ -136,6 +136,11 @@ class Gate(SQLModel, table=True):
 
 
 class Question(SQLModel, table=True):
+    # The webhook deletes a push's unanswered questions when a new push lands. Without this,
+    # SQLite hands their ids to the new questions, and a stale browser tab's answer to an
+    # old question would be graded against a new one.
+    __table_args__ = {"sqlite_autoincrement": True}
+
     id: int | None = Field(default=None, primary_key=True)
     gate_id: int = Field(foreign_key="gate.id")
     # The push (review) this question was asked about. The gate shows the latest push's
