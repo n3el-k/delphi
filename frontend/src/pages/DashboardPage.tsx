@@ -163,7 +163,7 @@ function Welcome() {
 
 function SkillMap({ skills }: { skills: Dashboard['skills'] }) {
   return (
-    <section aria-labelledby="skills-heading" className="rounded-xl border bg-card p-5 shadow-xs">
+    <section aria-labelledby="skills-heading" className="rounded-xl border bg-card p-5 shadow-sm">
       <h2 id="skills-heading" className="text-xl font-semibold">
         Skill map
       </h2>

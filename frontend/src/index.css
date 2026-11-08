@@ -12,6 +12,7 @@
     --color-jungle-ink: var(--jungle-ink);
     --color-peach: var(--peach);
     --color-peach-soft: var(--peach-soft);
+    --color-cream: var(--cream);
     --font-heading: 'Fraunces Variable', Georgia, serif;
     --font-sans: 'Geist Variable', sans-serif;
     --color-sidebar-ring: var(--sidebar-ring);
@@ -56,45 +57,46 @@
 
 :root {
     /* Delphi palette. Contrast checked against WCAG AA:
-       jungle (#29AB87) is only 2.9:1 on white, so it's a fill with dark text on it (5.3:1),
+       jungle (#29AB87) is only 2.9:1 on white or cream, so it's a fill with dark text on it (5.3:1),
        never text on white. Text, links and the focus ring use jungle-ink (5.3:1 on white). */
     --forest: #0E3B2E;      /* dark green: header, primary buttons (white on it 12.5:1) */
     --jungle: #29AB87;      /* jungle green: progress, success, "Done" */
-    --jungle-ink: #1B7A5F;  /* jungle green dark enough for text and focus rings */
+    --jungle-ink: #156A52;  /* jungle green dark enough for text and focus rings (5.3:1 on cream) */
     --peach: #FFCBA4;       /* highlights: logo, active nav, "In review" (ink on it 10.5:1) */
-    --peach-soft: #FFF1E6;  /* calm highlight backgrounds */
+    --peach-soft: #FCE9DA;  /* calm highlight backgrounds */
+    --cream: #EFE7D8;       /* the page: warm cream instead of white */
 
-    --background: #F4F8F6;
+    --background: var(--cream);
     --foreground: #0B2A20;
-    --card: #FFFFFF;
+    --card: #FBF7EF;
     --card-foreground: #0B2A20;
-    --popover: #FFFFFF;
+    --popover: #FBF7EF;
     --popover-foreground: #0B2A20;
     --primary: var(--forest);
     --primary-foreground: #FFFFFF;
-    --secondary: #E3F1EB;
+    --secondary: #DFE8DD;
     --secondary-foreground: #0B2A20;
-    --muted: #E7F0EC;
-    --muted-foreground: #4A6157;   /* 6.3:1 on the page background */
+    --muted: #E6DDCB;
+    --muted-foreground: #4A6157;   /* 5.5:1 on cream, 6.3:1 on cards */
     --accent: var(--peach-soft);
     --accent-foreground: #0B2A20;
     --destructive: #B42318;
-    --border: #D5E3DC;
-    --input: #748E82;              /* input borders need 3:1: this is 3.5:1 */
+    --border: #D8CCB6;
+    --input: #748E82;              /* input borders need 3:1: this is 3.3:1 on cards */
     --ring: var(--jungle-ink);
     --chart-1: var(--jungle);
     --chart-2: var(--forest);
     --chart-3: var(--peach);
     --chart-4: #4A6157;
-    --chart-5: #E3F1EB;
+    --chart-5: #DFE8DD;
     --radius: 0.75rem;
-    --sidebar: #FFFFFF;
+    --sidebar: #FBF7EF;
     --sidebar-foreground: #0B2A20;
     --sidebar-primary: var(--forest);
     --sidebar-primary-foreground: #FFFFFF;
     --sidebar-accent: var(--peach-soft);
     --sidebar-accent-foreground: #0B2A20;
-    --sidebar-border: #D5E3DC;
+    --sidebar-border: #D8CCB6;
     --sidebar-ring: var(--jungle-ink);
 }
 

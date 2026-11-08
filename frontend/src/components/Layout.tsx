@@ -1,5 +1,5 @@
 import { Link, NavLink, Outlet } from 'react-router'
-import { LogoMark } from '@/components/Logo'
+import { GreekKey, LogoMark } from '@/components/Logo'
 import { useApi, type Me } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
@@ -82,6 +82,8 @@ export default function Layout() {
             </p>
           )}
         </div>
+        {/* The one ornament: a peach Greek key along the bottom of the header */}
+        <GreekKey className="text-peach/60" />
       </header>
 
       {/* tabIndex -1 lets the skip link move focus here */}

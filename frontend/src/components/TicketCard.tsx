@@ -23,7 +23,7 @@ export function StatusPill({ value }: { value: TicketStatus }) {
  */
 export default function TicketCard({ ticket, status: value }: { ticket: NewTicket; status?: TicketStatus }) {
   return (
-    <article className="rounded-xl border bg-card p-5 shadow-xs">
+    <article className="rounded-xl border bg-card p-5 shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <h3 className="text-base font-semibold">{ticket.title}</h3>
         {value && <StatusPill value={value} />}
