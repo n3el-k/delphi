@@ -65,7 +65,7 @@ M1: `reviewer.py` (`generate_tickets` with its cached fallback, and `review_diff
 `reviewer.py` was built standalone, before the skeleton existed. Now:
 
 - [x] Add `anthropic` to `backend/pyproject.toml` (shared file, Param told in the PR #2 approval)
-- [ ] Add `anthropic_api_key` to `config.Settings` and pass it to `anthropic.Anthropic(api_key=...)`. Right now the SDK reads it from the environment, which only works with `uv run --env-file .env`
+- [x] Add `anthropic_api_key` to `config.Settings` and pass it to `anthropic.Anthropic(api_key=...)`, so a plain `uv run fastapi dev` server finds the key in `.env`
 - [x] Replace the `SkillAreaName` Literal in `reviewer.py` with `models.SkillArea`
 - [ ] Map `ReviewResult` onto `Review` + `Finding` rows (`hints` = `[concept, where_to_look, snippet]`) and `TicketSet` onto `Project` + `Ticket`
 - [ ] Run `scripts/try_reviewer.py` with plain `uv run python -m scripts.try_reviewer` (it now takes the demo ticket from `FALLBACK_TICKETS`, since there's no seeded project any more)
