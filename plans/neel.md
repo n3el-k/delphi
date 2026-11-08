@@ -8,9 +8,9 @@ The GitHub + AI pipeline: everything that talks to GitHub or Claude. I meet Para
 
 ## Now
 
-The webhook is in the `feat/webhook` PR: signed `POST /webhooks/github`, the GitHub App client, and a background task that reviews the PR, saves it and posts the bot comment. The gate opens with no questions until the M2 questions PR. It needs PR #7 (Anthropic key from settings) merged to run live, and `config.py` will need a small merge with #7. Next: a live run on the demo repo through smee, then M2.
+M1 and M2 are merged (#7–#10). The backend runs the whole loop: PR → webhook → Socratic review with findings and questions → answers graded in the app → bot approves the PR → skill map updates. Tested live once end to end on `n3el-k/level1-calculator`.
 
-Previously: M1: `reviewer.py` (`generate_tickets` with its cached fallback, and `review_diff`) is in PR #4, waiting on Param's review. PR #2 (backend skeleton) is merged, so next is wiring the reviewer into it, then the webhook and GitHub client.
+Next: test the whole app end to end once Param's `POST /api/projects` and screens are in, then `POST /api/reviews/{id}/flag`.
 
 ## Next
 
@@ -41,14 +41,14 @@ Previously: M1: `reviewer.py` (`generate_tickets` with its cached fallback, and 
 - [x] `GET /api/gates/{id}` for Param's gate screen
 - [x] `POST /api/gates/{id}/answers`: grade each answer with Claude (score 0–100, explanation, next hint). The gate passes when every question's latest score is ≥ 70. A fail moves up the hint ladder, it doesn't approve
 - [x] On a pass: approve the PR through the GitHub API (pinned to `head_sha`), set `Gate.status = passed` and `Submission.status = approved`, mark fixed findings `resolved`, then call Param's `progress.record_gate_pass(...)`. Leave `passed_at` to it
-- [ ] Run the full loop live 3+ times. Record a backup video of it
+- [ ] Run the full loop live 3+ times (1 so far: n3el-k/level1-calculator#2, through the API with curl). Record a backup video of it
 
 ### M3: Transparency + hardening
 
 - [ ] Return the "why" with every grade and finding. Add `POST /api/reviews/{id}/flag`
-- [ ] Timeouts and retries on Claude and GitHub calls. Handle `stop_reason == "refusal"`
+- [x] Timeouts and retries on Claude and GitHub calls. Handle `stop_reason == "refusal"`. `_parse` has the timeouts, one SDK retry and the refusal check, and every GitHub call has a 10s timeout
 - [x] Cached fallback tickets for the calculator: `generate_tickets` returns them with `is_fallback=True` when Claude fails, with a 20s timeout and one SDK retry (~40s worst case). It never raises: cut-off JSON and unexpected errors fall back too, and a bad key is logged as an error. The expression ticket comes first, matching the demo PR
-- [ ] Cached review and questions for the demo PR, in case the API is slow or down during judging
+- [ ] ~~Cached review and questions for the demo PR~~ Dropped for now: test the whole app first, and only add it if Claude turns out to be unreliable (see Decisions)
 - [x] Agree who adds `is_fallback`: Param adds it to the `POST /api/projects` response and a `Project` column, in the `POST /api/projects` PR
 
 ### M4: Polish + submit
@@ -59,8 +59,7 @@ Previously: M1: `reviewer.py` (`generate_tickets` with its cached fallback, and 
 
 ## Blocked / need from Param
 
-- Re-review of PR #4 (reviewer service) and review of the plan update PR (no seeded projects)
-- Raise with Param (in the gate part 2 PR): `progress.gate_score` counts every question on the gate across pushes. The webhook now deletes a push's unanswered questions when a new one lands, so the demo works, but if a learner answers on push 1 and then pushes again, those old answers still count. It should only look at the latest push's questions (`Question.review_id`). Older note: `progress.gate_score` averages the latest scores, but the pass rule is every question ≥ 70, so the skill-points check there should use the minimum. `schemas.py` also imports `TicketStatus` from `services/progress.py`; the contract file shouldn't depend on a service
+- Raised with Param in #10: `progress.gate_score` counts every question on the gate across pushes. The webhook now deletes a push's unanswered questions when a new one lands, so the demo works, but if a learner answers on push 1 and then pushes again, those old answers still count. It should only look at the latest push's questions (`Question.review_id`). Older note: `progress.gate_score` averages the latest scores, but the pass rule is every question ≥ 70, so the skill-points check there should use the minimum. `schemas.py` also imports `TicketStatus` from `services/progress.py`; the contract file shouldn't depend on a service
 
 ## Wiring into the skeleton (PR #2 is merged)
 
@@ -69,9 +68,9 @@ Previously: M1: `reviewer.py` (`generate_tickets` with its cached fallback, and 
 - [x] Add `anthropic` to `backend/pyproject.toml` (shared file, Param told in the PR #2 approval)
 - [x] Add `anthropic_api_key` to `config.Settings` and pass it to `anthropic.Anthropic(api_key=...)`, so a plain `uv run fastapi dev` server finds the key in `.env`
 - [x] Replace the `SkillAreaName` Literal in `reviewer.py` with `models.SkillArea`
-- [ ] Map `ReviewResult` onto `Review` + `Finding` rows (`hints` = `[concept, where_to_look, snippet]`) ~~and `TicketSet` onto `Project` + `Ticket`~~ Review side done in the webhook PR. Tickets are Param's `POST /api/projects`
+- [x] Map `ReviewResult` onto `Review` + `Finding` rows (`hints` = `[concept, where_to_look, snippet]`) ~~and `TicketSet` onto `Project` + `Ticket`~~ Review side done in the webhook PR. Tickets are Param's `POST /api/projects`
 - [ ] Run `scripts/try_reviewer.py` with plain `uv run python -m scripts.try_reviewer` (it now takes the demo ticket from `FALLBACK_TICKETS`, since there's no seeded project any more)
-- [ ] Add the run and test commands to the Commands section of CLAUDE.md
+- [x] Add the run and test commands to the Commands section of CLAUDE.md
 
 ## Notes
 
