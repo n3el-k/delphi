@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import anthropic
 import httpx
 import pytest
+from pydantic import SecretStr
 
 from app.services import reviewer
 from app.services.reviewer import FALLBACK_TICKETS, ReviewerError, TicketDraft, TicketSet
@@ -104,6 +105,22 @@ def test_a_long_summary_is_trimmed_at_a_sentence(monkeypatch: pytest.MonkeyPatch
     assert result.is_fallback is False
     assert len(result.description) <= reviewer.MAX_SUMMARY_CHARS
     assert result.description.endswith(".")
+
+
+def test_client_uses_the_key_from_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Settings reads backend/.env but doesn't export it, so the client must get the key from settings.
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setattr(reviewer.settings, "anthropic_api_key", SecretStr("test-key-from-settings"))
+    reviewer._client.cache_clear()
+    try:
+        assert reviewer._client().api_key == "test-key-from-settings"
+    finally:
+        reviewer._client.cache_clear()
+
+
+def test_the_key_never_shows_in_settings_repr(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(reviewer.settings, "anthropic_api_key", SecretStr("test-key-from-settings"))
+    assert "test-key-from-settings" not in repr(reviewer.settings)
 
 
 def test_fallback_puts_the_expression_ticket_first() -> None:
