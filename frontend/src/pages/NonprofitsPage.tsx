@@ -154,7 +154,7 @@ export default function NonprofitsPage() {
                     <span className="text-muted-foreground">{c.size}</span>
                     <span className="flex items-center gap-1.5 rounded-full bg-peach px-2.5 py-0.5 text-xs font-medium">
                       <Lock aria-hidden="true" className="size-3" />
-                      After 3 approved PRs
+                      After 15 approved PRs
                     </span>
                   </div>
                 </div>
