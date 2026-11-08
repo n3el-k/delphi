@@ -398,14 +398,18 @@ def test_bad_input_is_rejected_before_claude(client: TestClient, session: Sessio
     assert count(session, Project) == 0
 
 
-def test_repeating_the_same_project_returns_it_without_calling_claude(client: TestClient, session: Session) -> None:
-    calls = use_generator(lambda idea: FAKE_TICKETS)
-    first = client.post("/api/projects", json=GOOD_BODY)
+def test_try_again_after_fallback_calls_claude(client: TestClient, session: Session) -> None:
+    """Neel's case: Claude stalled, the learner got example tickets and clicks Try again."""
+    use_generator(lambda idea: FAKE_TICKETS.model_copy(update={"is_fallback": True}))
+    first = client.post("/api/projects", json=GOOD_BODY).json()
+    assert first["is_fallback"] is True
+    calls = use_generator(lambda idea: FAKE_TICKETS)  # Claude is back
     again = client.post("/api/projects", json=GOOD_BODY)
-    assert (first.status_code, again.status_code) == (201, 200)
-    assert again.json() == first.json()
-    assert len(calls) == 1
-    assert count(session, Project) == 1
+    assert again.status_code == 201
+    assert again.json()["is_fallback"] is False
+    assert len(calls) == 1  # Claude really was asked again
+    body = client.get("/api/dashboard").json()
+    assert body["current_project"]["id"] == again.json()["id"]  # the real tickets are what the learner sees
 
 
 def test_same_idea_with_a_different_repo_is_a_new_project(client: TestClient, session: Session) -> None:
@@ -413,26 +417,6 @@ def test_same_idea_with_a_different_repo_is_a_new_project(client: TestClient, se
     r = client.post("/api/projects", json={**GOOD_BODY, "repo_full_name": "param-m1/habits-v2"})
     assert r.status_code == 201
     assert count(session, Project) == 2
-
-
-def test_a_simultaneous_duplicate_is_caught_by_the_database(client: TestClient, session: Session) -> None:
-    """A double-click: while this request waits on Claude, another one saves the same project."""
-    learner_id = progress.current_learner(session).id
-
-    def other_request_wins(idea: str) -> TicketResult:
-        session.add(Project(
-            learner_id=learner_id, idea=GOOD_BODY["idea"], title="Saved by the other click",  # type: ignore[arg-type]
-            description="d", repo_full_name=GOOD_BODY["repo_full_name"],
-        ))
-        session.commit()
-        return FAKE_TICKETS
-
-    use_generator(other_request_wins)
-    r = client.post("/api/projects", json=GOOD_BODY)
-    assert r.status_code == 200
-    assert r.json()["title"] == "Saved by the other click"  # we got theirs back
-    assert count(session, Project) == 1  # and no duplicate
-    assert count(session, Ticket) == 0  # our tickets were rolled back with our project
 
 
 def test_claude_failing_returns_503_and_saves_nothing(client: TestClient, session: Session) -> None:

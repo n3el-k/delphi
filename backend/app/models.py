@@ -55,10 +55,6 @@ class FindingKind(StrEnum):
 
 
 class Project(SQLModel, table=True):
-    # One learner can't have two projects with the same idea and repo. The database enforces it,
-    # so even two requests at the same moment (a double-click) can't both save one.
-    __table_args__ = (UniqueConstraint("learner_id", "idea", "repo_full_name"),)
-
     id: int | None = Field(default=None, primary_key=True)
     learner_id: int = Field(foreign_key="learner.id")  # whose project this is
     idea: str  # what the learner typed; Claude turns it into tickets

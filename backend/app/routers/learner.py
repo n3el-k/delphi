@@ -6,9 +6,8 @@ and shape the result into the response models from schemas.py.
 
 from collections.abc import Callable
 
-from fastapi import APIRouter, Depends, HTTPException, Response
-from sqlalchemy.exc import IntegrityError
-from sqlmodel import Session, col, select
+from fastapi import APIRouter, Depends, HTTPException
+from sqlmodel import Session, select
 
 from app.db import get_session
 from app.models import Project, SkillArea, SkillScore, Ticket
@@ -96,7 +95,6 @@ def get_dashboard(session: Session = Depends(get_session)) -> DashboardOut:
 @router.post("/projects", status_code=201)
 def create_project(
     body: ProjectIn,
-    response: Response,
     session: Session = Depends(get_session),
     generate_tickets: TicketGenerator = Depends(get_ticket_generator),
 ) -> ProjectOut:
@@ -104,13 +102,6 @@ def create_project(
     # 1. Whose project: the current learner, the same "me" as /me and /dashboard.
     me = progress.current_learner(session)
     assert me.id is not None
-
-    # Already made this exact project (same idea, same repo)? Return it instead of making a
-    # duplicate, e.g. after a refresh. Checked before Claude, so a repeat costs nothing.
-    existing = _existing_project_out(session, me.id, body)
-    if existing is not None:
-        response.status_code = 200  # "here it is", not "created"
-        return existing
 
     # 2. Ask Claude (or the fake, in tests) for a title, a summary and the tickets.
     #    Done before writing anything, so nothing is half-saved while Claude thinks.
@@ -132,16 +123,7 @@ def create_project(
         is_fallback=result.is_fallback,
     )
     session.add(project)
-    try:
-        session.flush()
-    except IntegrityError:
-        # Another request saved this exact project while we were waiting on Claude (a double-click).
-        # The unique constraint stopped a duplicate; undo our attempt and return theirs.
-        session.rollback()
-        existing = _existing_project_out(session, me.id, body)
-        assert existing is not None  # the constraint only fires if it exists
-        response.status_code = 200
-        return existing
+    session.flush()
     assert project.id is not None
 
     # 4. Save its tickets, numbered 1, 2, 3... in the order Claude gave them
@@ -164,21 +146,6 @@ def create_project(
 
     # 6. Send back the new project and its tickets (now with their ids), as the contract says.
     return _project_out(project, tickets)
-
-
-def _existing_project_out(session: Session, learner_id: int, body: ProjectIn) -> ProjectOut | None:
-    """The learner's project with this exact idea and repo, shaped for the response, or None."""
-    project = session.exec(
-        select(Project).where(
-            Project.learner_id == learner_id,
-            Project.idea == body.idea,
-            Project.repo_full_name == body.repo_full_name,
-        )
-    ).first()
-    if project is None:
-        return None
-    tickets = session.exec(select(Ticket).where(Ticket.project_id == project.id).order_by(col(Ticket.position))).all()
-    return _project_out(project, list(tickets))
 
 
 def _project_out(project: Project, tickets: list[Ticket]) -> ProjectOut:
