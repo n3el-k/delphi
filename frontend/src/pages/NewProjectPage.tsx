@@ -67,7 +67,10 @@ export default function NewProjectPage() {
             required
           />
           <p id="repo-help" className="text-sm text-muted-foreground">
-            The repo you'll open pull requests on, like <code>n3el-k/level1-calculator</code>.
+            An existing repo with the reviewer installed, like <code>your-name/todo</code>. We don't create it for you.{' '}
+            <Link to="/help" className="underline underline-offset-4">
+              How to set one up
+            </Link>
           </p>
         </div>
         <Button type="submit" disabled={creating}>

@@ -7,6 +7,7 @@ const links = [
   { to: '/', label: 'Dashboard', end: true },
   { to: '/projects/new', label: 'New project', end: false },
   { to: '/portfolio', label: 'Portfolio', end: false },
+  { to: '/help', label: 'Help', end: false },
 ]
 
 /** The frame around every page: a skip link, the nav and the learner's name. */
