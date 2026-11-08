@@ -66,7 +66,9 @@ if [ ! -f "$ROOT/backend/app.db" ]; then
   (cd "$ROOT/backend" && uv run python -m app.seed)
 fi
 
-# 6. Run. On exit (Ctrl+C or one side crashing the script), stop the whole process group.
+# 6. Run. On exit (Ctrl+C or an error in this script), stop the whole process group.
+#    If one server crashes, the others keep running: macOS bash 3.2 has no `wait -n` to
+#    notice it. Its last log lines show it stopped. Press Ctrl+C and start again.
 trap 'trap - INT TERM EXIT; echo; say "stopping"; kill 0 2>/dev/null' INT TERM EXIT
 
 # On a non-default port, point CORS (FRONTEND_ORIGIN) and the web app (VITE_API_URL) at
@@ -77,7 +79,8 @@ trap 'trap - INT TERM EXIT; echo; say "stopping"; kill 0 2>/dev/null' INT TERM E
 prefixed "[api] " bash -c "cd '$ROOT/backend' && exec uv run fastapi dev app/main.py --port $API_PORT" &
 prefixed "[web] " bash -c "cd '$ROOT/frontend' && exec npm run dev -- --port $WEB_PORT --strictPort" &
 
-SMEE_URL="$(grep -E '^SMEE_URL=' "$ROOT/backend/.env" | cut -d= -f2- || true)"
+# Strip quotes, so SMEE_URL="https://..." in .env works too.
+SMEE_URL="$(grep -E '^SMEE_URL=' "$ROOT/backend/.env" | cut -d= -f2- | tr -d "\"'" || true)"
 if [ -z "$SMEE_URL" ]; then
   say "SMEE_URL is empty in backend/.env, so GitHub webhooks won't reach this laptop"
 elif pgrep -f smee-client >/dev/null; then
