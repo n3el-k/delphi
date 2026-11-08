@@ -6,8 +6,6 @@ so it can't drift out of sync with what actually happened.
 
 from datetime import UTC, datetime
 
-from typing import Literal
-
 from sqlmodel import Session, col, func, select
 
 from app.config import settings
@@ -25,12 +23,13 @@ from app.models import (
     Submission,
     SubmissionStatus,
     Ticket,
+    TicketStatus,
 )
 
 SKILL_POINTS_PER_PASS = 10  # each skill area on the ticket
 SKILL_POINTS_PER_SECURITY_FIX = 5  # extra security points per fixed security finding
 MAX_SKILL = 100
-MIN_GATE_SCORE = 70  # a ticket only counts when its gate score (0–100) is at least this
+MIN_GATE_SCORE = 70  # a ticket only counts when every question's latest score (0–100) is at least this
 
 
 class NotSeededError(Exception):
@@ -59,8 +58,12 @@ def current_learner(session: Session) -> Learner:
 # --- What counts ---
 
 
-def gate_score(session: Session, gate_id: int) -> float | None:
-    """Average of the latest answer's score on each question. None if a question is unanswered."""
+def gate_score(session: Session, gate_id: int) -> int | None:
+    """The lowest of the latest scores across the gate's questions. None if a question is unanswered.
+
+    The lowest, not the average, to match the pass rule: every question needs MIN_GATE_SCORE.
+    An average would let 90 and 55 (72.5) count even though one question was failed.
+    """
     questions = session.exec(select(Question).where(Question.gate_id == gate_id)).all()
     if not questions:
         return None
@@ -72,7 +75,7 @@ def gate_score(session: Session, gate_id: int) -> float | None:
         if latest is None:
             return None
         latest_scores.append(latest.score)
-    return sum(latest_scores) / len(latest_scores)
+    return min(latest_scores)
 
 
 def counted_ticket_ids(session: Session, learner_id: int) -> set[int]:
@@ -115,16 +118,13 @@ def submitted_ticket_ids(session: Session, learner_id: int) -> set[int]:
     return set(session.exec(select(Submission.ticket_id).where(Submission.learner_id == learner_id)).all())
 
 
-TicketStatus = Literal["todo", "in_review", "done"]
-
-
 def ticket_status(ticket_id: int, counted: set[int], submitted: set[int]) -> TicketStatus:
-    """done = counts (approved, gate passed, score ≥ 70); in_review = has a PR that doesn't count yet."""
+    """done = counts (approved, gate passed, every score ≥ 70); in_review = has a PR that doesn't count yet."""
     if ticket_id in counted:
-        return "done"
+        return TicketStatus.done
     if ticket_id in submitted:
-        return "in_review"
-    return "todo"
+        return TicketStatus.in_review
+    return TicketStatus.todo
 
 
 def open_gate_id(session: Session, learner_id: int) -> int | None:

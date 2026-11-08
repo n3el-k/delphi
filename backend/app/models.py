@@ -32,6 +32,14 @@ class SubmissionStatus(StrEnum):
     approved = "approved"
 
 
+class TicketStatus(StrEnum):
+    """Where the learner is with a ticket. Not a column: computed from their PRs (progress.ticket_status)."""
+
+    todo = "todo"
+    in_review = "in_review"
+    done = "done"
+
+
 class GateStatus(StrEnum):
     reviewing = "reviewing"
     open = "open"
@@ -51,8 +59,9 @@ class Project(SQLModel, table=True):
     learner_id: int = Field(foreign_key="learner.id")  # whose project this is
     idea: str  # what the learner typed; Claude turns it into tickets
     title: str
-    description: str
+    description: str  # Claude's summary of the idea, shown on the dashboard (at most 500 characters)
     repo_full_name: str  # the learner's GitHub repo, "owner/name"
+    is_fallback: bool = False  # True when these are the cached example tickets, not Claude's
 
 
 class Ticket(SQLModel, table=True):
