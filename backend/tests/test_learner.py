@@ -9,7 +9,7 @@ from collections.abc import Iterator
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.pool import StaticPool
-from sqlmodel import Session, SQLModel, create_engine, select
+from sqlmodel import Session, SQLModel, col, create_engine, select
 
 import app.models  # noqa: F401  (registers the tables)
 from app.db import get_session
@@ -49,10 +49,15 @@ def client(session: Session) -> Iterator[TestClient]:
     app.dependency_overrides.clear()
 
 
-def level1_tickets(session: Session) -> list[Ticket]:
+def demo_tickets(session: Session) -> list[Ticket]:
+    """The demo learner's 6 seeded tickets: Calculator's 3, then To-do list's 3."""
+    learner = progress.current_learner(session)
     return list(
         session.exec(
-            select(Ticket).join(Project).where(Project.level_id == 1).order_by(Project.position, Ticket.position)
+            select(Ticket)
+            .join(Project, col(Ticket.project_id) == col(Project.id))
+            .where(Project.learner_id == learner.id)
+            .order_by(col(Project.id), col(Ticket.position))
         ).all()
     )
 
@@ -87,73 +92,84 @@ def pass_ticket(session: Session, ticket: Ticket, score: int = 90, security_fix:
 
 def test_me(client: TestClient) -> None:
     body = client.get("/api/me").json()
-    assert body["github_login"] == "param-m1"
-    assert body["current_level"] == {"number": 1, "name": "Foundations"}
+    assert body == {"name": "Param Mehta", "github_login": "param-m1"}
 
 
-def test_levels_show_the_ramp(client: TestClient) -> None:
-    levels = client.get("/api/levels").json()
-    assert [lv["status"] for lv in levels] == ["current", "locked", "locked", "locked"]
-    assert [(lv["starts_at"], lv["ends_at"]) for lv in levels] == [
-        ("snippet", "function"), ("function", "file"), ("file", "delegated"), ("delegated", "system"),
-    ]
-    assert levels[0]["requirements"] == {"projects": 2, "min_gate_score": 70, "security_fixes": 1}
+def statuses(body: dict) -> list[str]:
+    return [t["status"] for t in body["tickets"]]
 
 
 def test_new_learner_dashboard(client: TestClient) -> None:
     body = client.get("/api/dashboard").json()
+    assert set(body) == {"skills", "current_project", "tickets", "open_gate_id"}  # matches the contract exactly
     assert [s["score"] for s in body["skills"]] == [0] * 7
     assert body["current_project"]["title"] == "Calculator"
-    assert body["current_ticket"]["size"] == "snippet"
-    assert body["current_ticket"]["title"] == "Make add() and subtract() return the right answer"
+    assert [t["title"] for t in body["tickets"]] == [
+        "Make add() and subtract() return the right answer",
+        "Handle dividing by zero",
+        "Evaluate a whole expression",
+    ]
+    assert statuses(body) == ["todo", "todo", "todo"]
     assert body["open_gate_id"] is None
-    assert body["progress"] == {"projects": {"done": 0, "required": 2}, "security_fixes": {"done": 0, "required": 1}}
 
 
-def test_passing_moves_to_next_ticket_and_raises_skills(client: TestClient, session: Session) -> None:
-    first = level1_tickets(session)[0]
-    pass_ticket(session, first)
+def test_passing_marks_ticket_done_and_raises_skills(client: TestClient, session: Session) -> None:
+    pass_ticket(session, demo_tickets(session)[0])
     body = client.get("/api/dashboard").json()
-    assert body["current_ticket"]["title"] == "Handle dividing by zero"
+    assert statuses(body) == ["done", "todo", "todo"]
     skills = {s["area"]: s["score"] for s in body["skills"]}
     assert skills["backend"] == 10 and skills["testing"] == 10 and skills["security"] == 0
 
 
-def test_low_gate_score_does_not_count(client: TestClient, session: Session) -> None:
-    first = level1_tickets(session)[0]
-    pass_ticket(session, first, score=60)  # below Level 1's minimum of 70
+def test_low_gate_score_does_not_count_or_earn_skills(client: TestClient, session: Session) -> None:
+    pass_ticket(session, demo_tickets(session)[0], score=60)  # below MIN_GATE_SCORE (70)
     body = client.get("/api/dashboard").json()
-    assert body["current_ticket"]["title"] == first.title
+    assert statuses(body) == ["in_review", "todo", "todo"]  # has a PR, but it doesn't count
+    assert [s["score"] for s in body["skills"]] == [0] * 7
 
 
-def test_security_fix_counts(client: TestClient, session: Session) -> None:
-    calc = level1_tickets(session)[:3]
-    for t in calc[:2]:
-        pass_ticket(session, t)
+def test_ticket_is_in_review_while_its_gate_is_open(client: TestClient, session: Session) -> None:
+    ticket = demo_tickets(session)[0]
+    sub = Submission(
+        learner_id=progress.current_learner(session).id, ticket_id=ticket.id,  # type: ignore[arg-type]
+        repo_full_name="n3el-k/level1-calculator", pr_number=7, pr_url="https://github.com/n3el-k/level1-calculator/pull/7",
+        head_sha="abc", diff="", status=SubmissionStatus.awaiting_gate,
+    )
+    session.add(sub)
+    session.flush()
+    gate = Gate(submission_id=sub.id, status=GateStatus.open)  # type: ignore[arg-type]
+    session.add(gate)
+    session.commit()
+    body = client.get("/api/dashboard").json()
+    assert statuses(body) == ["in_review", "todo", "todo"]
+    assert body["open_gate_id"] == gate.id
+
+
+def test_finishing_a_project_moves_to_the_next(client: TestClient, session: Session) -> None:
+    calc = demo_tickets(session)[:3]
+    pass_ticket(session, calc[0])
+    pass_ticket(session, calc[1])
     pass_ticket(session, calc[2], security_fix=True)
     body = client.get("/api/dashboard").json()
-    assert body["progress"] == {"projects": {"done": 1, "required": 2}, "security_fixes": {"done": 1, "required": 1}}
     assert body["current_project"]["title"] == "To-do list"
+    assert statuses(body) == ["todo", "todo", "todo"]
     assert {s["area"]: s["score"] for s in body["skills"]}["security"] == 15  # +10 for the ticket, +5 for the fix
 
 
-def test_finishing_level_1_promotes_to_level_2(client: TestClient, session: Session) -> None:
-    for i, t in enumerate(level1_tickets(session)):
-        pass_ticket(session, t, security_fix=(i == 2))
-    assert client.get("/api/me").json()["current_level"]["number"] == 2
-    levels = client.get("/api/levels").json()
-    assert [lv["status"] for lv in levels] == ["done", "current", "locked", "locked"]
-    # Level 2 has no content yet, so there's no current project
-    body = client.get("/api/dashboard").json()
-    assert body["current_project"] is None and body["current_ticket"] is None
-    assert body["progress"]["projects"] == {"done": 0, "required": 2}
-
-
-def test_no_promotion_without_a_security_fix(session: Session) -> None:
-    for t in level1_tickets(session):
+def test_no_current_project_once_everything_is_done(client: TestClient, session: Session) -> None:
+    for t in demo_tickets(session):
         pass_ticket(session, t)
-    learner = session.exec(select(Learner)).one()
-    assert learner.current_level_id == 1
+    body = client.get("/api/dashboard").json()
+    assert body["current_project"] is None
+    assert body["tickets"] == []
+
+
+def test_current_learner_is_found_by_github_login(client: TestClient, session: Session) -> None:
+    me = progress.current_learner(session)
+    me.github_login = "someone-else"  # the demo login no longer matches anyone
+    session.add(me)
+    session.commit()
+    assert client.get("/api/me").status_code == 503
 
 
 # --- Edge cases and safety ---
@@ -194,14 +210,14 @@ def test_cors_only_allows_our_frontend(client: TestClient) -> None:
 
 
 def test_recording_the_same_pass_twice_counts_once(session: Session) -> None:
-    sub = pass_ticket(session, level1_tickets(session)[0])
+    sub = pass_ticket(session, demo_tickets(session)[0])
     assert progress.record_gate_pass(session, 1, sub.id) is False  # type: ignore[arg-type]
     backend = session.exec(select(SkillScore).where(SkillScore.area == "backend")).one()
     assert backend.score == 10
 
 
 def test_cannot_record_a_pass_for_an_unapproved_pr(session: Session) -> None:
-    ticket = level1_tickets(session)[0]
+    ticket = demo_tickets(session)[0]
     sub = Submission(
         learner_id=1, ticket_id=ticket.id, repo_full_name="x/y", pr_number=1, pr_url="u",  # type: ignore[arg-type]
         head_sha="a", diff="", status=SubmissionStatus.awaiting_gate,
@@ -213,8 +229,8 @@ def test_cannot_record_a_pass_for_an_unapproved_pr(session: Session) -> None:
 
 
 def test_cannot_record_a_pass_for_someone_elses_pr(session: Session) -> None:
-    sub = pass_ticket(session, level1_tickets(session)[0])
-    other = Learner(name="Someone else", github_login="someone-else", current_level_id=1)
+    sub = pass_ticket(session, demo_tickets(session)[0])
+    other = Learner(name="Someone else", github_login="someone-else")
     session.add(other)
     session.commit()
     with pytest.raises(progress.GatePassError):
@@ -226,14 +242,5 @@ def test_skills_never_go_above_100(session: Session) -> None:
     skill.score = 95
     session.add(skill)
     session.commit()
-    pass_ticket(session, level1_tickets(session)[0])
+    pass_ticket(session, demo_tickets(session)[0])
     assert skill.score == 100
-
-
-def test_top_level_learner_is_not_promoted_further(session: Session) -> None:
-    learner = progress.current_learner(session)
-    learner.current_level_id = 4
-    session.add(learner)
-    session.commit()
-    assert progress.maybe_promote(session, learner) is False
-    assert learner.current_level_id == 4

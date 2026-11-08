@@ -21,16 +21,6 @@ class SkillArea(StrEnum):
     testing = "testing"
 
 
-class TicketSize(StrEnum):
-    """How much the learner owns in one ticket. The level ramp climbs through these in order."""
-
-    snippet = "snippet"  # a few lines
-    function = "function"  # a whole function
-    file = "file"  # a whole file
-    delegated = "delegated"  # a feature where AI does the grunt work under your review
-    system = "system"  # architecture and design across a whole system
-
-
 class TicketLabel(StrEnum):
     core = "core"
     delegable = "delegable"
@@ -53,39 +43,22 @@ class FindingKind(StrEnum):
     correctness = "correctness"
 
 
-# --- Content (seeded) ---
-
-
-class Level(SQLModel, table=True):
-    id: int | None = Field(default=None, primary_key=True)
-    number: int = Field(unique=True, ge=1, le=4)
-    name: str
-    ai_policy: str
-    # The ownership ramp: tickets on this level start at one size and end at another
-    starts_at: TicketSize
-    ends_at: TicketSize
-    # What the AI review and gate concentrate on at this level. Neel's prompts read this.
-    review_focus: str
-    unlocks: list[str] = Field(default_factory=list, sa_column=Column(JSON, nullable=False))
-    required_projects: int
-    min_gate_score: int
-    required_security_fixes: int
+# --- Projects and tickets (from the learner's idea, or the seeded demo) ---
 
 
 class Project(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
-    level_id: int = Field(foreign_key="level.id")
-    position: int  # order of the project within its level
+    learner_id: int = Field(foreign_key="learner.id")  # whose project this is
+    idea: str  # what the learner typed; Claude turns it into tickets
     title: str
     description: str
-    repo_full_name: str
+    repo_full_name: str  # the learner's GitHub repo, "owner/name"
 
 
 class Ticket(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     project_id: int = Field(foreign_key="project.id")
     position: int  # order of the ticket within its project
-    size: TicketSize
     title: str
     why: str
     acceptance_criteria: list[str] = Field(default_factory=list, sa_column=Column(JSON, nullable=False))
@@ -100,7 +73,6 @@ class Learner(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     name: str
     github_login: str = Field(unique=True)
-    current_level_id: int = Field(foreign_key="level.id")
 
 
 class SkillScore(SQLModel, table=True):
