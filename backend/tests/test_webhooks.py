@@ -367,3 +367,12 @@ def test_the_comment_says_to_fix_a_security_issue_first(
 ) -> None:
     deliver(client, pr_event())
     assert "Fix the security issue above and push again" in fakes["comments"][0]
+
+
+def test_a_new_push_drops_old_unanswered_questions(
+    client: TestClient, session: Session, tickets: list[Ticket], fakes: dict
+) -> None:
+    deliver(client, pr_event())
+    deliver(client, pr_event(action="synchronize", sha="def456"))
+    latest = session.exec(select(Review).order_by(Review.id.desc())).first()  # type: ignore[union-attr]
+    assert {q.review_id for q in session.exec(select(Question)).all()} == {latest.id}  # type: ignore[union-attr]

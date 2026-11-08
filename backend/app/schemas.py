@@ -4,7 +4,7 @@ The frontend generates its TypeScript types from these through /openapi.json,
 so this file is the single source of truth. Neel's gate and flag models go here too.
 """
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.models import FindingKind, GateStatus, SkillArea
 from app.services.progress import TicketStatus
@@ -94,3 +94,30 @@ class GateOut(BaseModel):
     review: GateReviewOut | None
     findings: list[FindingOut]
     questions: list[QuestionOut]
+
+
+# --- POST /api/gates/{id}/answers (Neel) ---
+
+
+class AnswerIn(BaseModel):
+    question_id: int
+    text: str = Field(min_length=1, max_length=2000)
+
+
+class AnswersIn(BaseModel):
+    # Only the questions not passed yet need answering again. A push has at most 3 questions.
+    answers: list[AnswerIn] = Field(min_length=1, max_length=3)
+
+
+class AnswerResult(BaseModel):
+    question_id: int
+    score: int
+    passed: bool
+    explanation: str
+    next_hint: str | None
+
+
+class AnswersOut(BaseModel):
+    # true when every question on the latest push has passed: the PR is approved
+    passed: bool
+    results: list[AnswerResult]
