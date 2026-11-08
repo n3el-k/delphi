@@ -17,7 +17,7 @@ STARTING_SKILLS = {area: 0 for area in SkillArea}
 
 def seed(session: Session) -> None:
     # 1. The learner first: their skill scores need their ID.
-    learner = Learner(name="Param Mehta", github_login=settings.demo_learner_github_login)
+    learner = Learner(name="Demo learner", github_login=settings.demo_learner_github_login)
     session.add(learner)
     session.flush()  # sends the insert so the database assigns learner.id
     assert learner.id is not None

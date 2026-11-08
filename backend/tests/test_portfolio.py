@@ -13,6 +13,7 @@ from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine, select
 
 import app.models  # noqa: F401  (registers the tables)
+from app.config import settings
 from app.db import get_session
 from app.main import app
 from app.models import (
@@ -135,7 +136,7 @@ def skill(session: Session, area: SkillArea) -> int:
 def test_a_new_learner_has_an_empty_portfolio(client: TestClient) -> None:
     body = client.get("/api/portfolio").json()
     assert body == {
-        "learner": {"name": "Param Mehta", "github_login": "param-m1"},
+        "learner": {"name": "Demo learner", "github_login": settings.demo_learner_github_login},
         "projects": [],
         "security_fixes": [],
     }
