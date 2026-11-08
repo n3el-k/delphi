@@ -13,9 +13,11 @@ The shared source of truth for scope, architecture and who's doing what. The pro
 
 ### Must have (in priority order)
 
-1. [ ] **Live GitHub loop:** Level 1 PR → webhook → AI posts a Socratic review with at least one security or correctness finding → learner answers comprehension questions in our app → pass → PR approved, skill profile and level progress update.
-2. [ ] **Level map:** all 4 levels visible, current one active, higher ones locked, each showing what it unlocks (including AI permissions).
-3. [ ] **Learner dashboard:** skill map across the stack, current project and ticket, progress to the next level.
+There are no levels in the MVP. One fixed AI rule applies to everyone: the AI turns your idea into tickets, reviews and tutors, and never writes your code.
+
+1. [ ] **Live GitHub loop:** PR on a ticket → webhook → AI posts a Socratic review with at least one security or correctness finding → learner answers comprehension questions in our app → pass → PR approved, skill profile updates.
+2. [ ] **Project idea → tickets:** the learner types a project idea and links their repo. Claude turns the idea into 3–5 tickets with the why and acceptance criteria (never the how), spread across the stack.
+3. [ ] **Learner dashboard:** skill map across the stack, the current project, and its tickets with their status.
 4. [ ] **Experience report / portfolio page.**
 5. [ ] **Transparency:** every AI grade shows why, and any review can be flagged. This is a non-negotiable and part of the Accessibility sidepot story.
 
@@ -23,10 +25,12 @@ The shared source of truth for scope, architecture and who's doing what. The pro
 
 - Auth and signup: one seeded learner, no real login.
 - Assessment and notifications.
-- Levels 2–4 content: shown on the level map, not playable.
+- Default demo project: a seeded calculator whose tickets include the `eval()` trap. A free-form idea can't guarantee a security finding on stage, so the demo uses this, and it's also the fallback if ticket generation fails.
 
 ### Nice to have (only once the must-haves work end to end)
 
+- [ ] Levels, part 1: a static level map. All 4 levels shown as a roadmap with the learner on Level 1, the others locked, and what each unlocks. Keep the AI rule in one place so it can become one rule per level.
+- [ ] Levels, part 2: real promotion between levels.
 - [ ] Level 3–4 delegation: CORE/DELEGABLE ticket labels, review of AI-written code.
 - [ ] Nonprofit commissions screen with seeded tickets, for the Local Impact pitch. Use made-up nonprofits unless a real one has said yes.
 - [ ] Matched teams and volunteer pros.
@@ -51,7 +55,9 @@ FastAPI  /webhooks/github ──diff──► Claude: review + questions ──�
 Learner ──► React app ──► FastAPI /api/... ───────────────────────┘
                │
                └─ submits answers ─► Claude grades ─► pass? ─► approve PR on GitHub
-                                                         └──► update skill profile + level progress
+                                                         └──► update skill profile
+
+Learner ──► project idea ──► Claude: tickets ──► DB
 ```
 
 ### Stack
@@ -65,15 +71,16 @@ Learner ──► React app ──► FastAPI /api/... ────────�
 | Frontend | Vite + React + TypeScript, Tailwind, shadcn/ui, React Router, TanStack Query, lucide-react | FastAPI is the backend, so the frontend only needs to be a plain React app with no server layer to fight. shadcn/ui gives polished components built on Radix, so keyboard and screen reader support come mostly for free. Claude Code is very fluent in this stack. |
 | Webhook in dev | smee.io | GitHub needs a public URL to deliver webhooks to a laptop. |
 
-### The three Claude calls (Neel)
+### The four Claude calls (Neel)
 
 Each call returns a Pydantic model, so the API, the DB and the frontend all share one shape.
 
-1. **Review** (diff, ticket, level policy) → summary, findings (kind: security or correctness, vulnerability class, file, line, a Socratic question, a hint ladder of concept → where to look → small snippet), policy flags.
-2. **Questions** (diff) → 2–3 questions about the learner's own lines.
-3. **Grade** (question, diff, answer) → score, passed, explanation of the grade, next hint if failed.
+1. **Tickets** (project idea) → 3–5 tickets: title, why, acceptance criteria, skill areas. Never the how.
+2. **Review** (diff, ticket, AI rule) → summary, findings (kind: security or correctness, vulnerability class, file, line, a Socratic question, a hint ladder of concept → where to look → small snippet), policy flags.
+3. **Questions** (diff) → 2–3 questions about the learner's own lines.
+4. **Grade** (question, diff, answer) → score 0–100, passed, explanation of the grade, next hint if failed.
 
-Rules: never full corrected code (enforced in the prompt and by rejecting long snippets). Check `stop_reason` for refusals. Keep a cached known-good review of the demo PR as a fallback for judging.
+Rules: never full corrected code (enforced in the prompt and by rejecting long snippets). Check `stop_reason` for refusals. Keep cached known-good output as a fallback for judging: the calculator's tickets, and the review and questions for the demo PR.
 
 ### Folder structure
 
@@ -89,17 +96,17 @@ backend/
     routers/
       webhooks.py    # POST /webhooks/github                (Neel)
       gates.py       # comprehension gate endpoints         (Neel)
-      learner.py     # me, levels, dashboard, portfolio     (Param)
+      learner.py     # me, projects, dashboard, portfolio   (Param)
     services/
       github.py      # GitHub App client                    (Neel)
       reviewer.py    # Claude prompts and calls             (Neel)
-      progress.py    # skill + level progress updates       (Param)
+      progress.py    # skill progress updates               (Param)
   tests/
   pyproject.toml
   .env.example
 frontend/
   src/
-    pages/           # LevelMap, Dashboard, Gate, Portfolio
+    pages/           # NewProject, Dashboard, Gate, Portfolio
     components/
     lib/api.ts       # typed client for the contract
   package.json
@@ -115,28 +122,26 @@ Shared files change only in small PRs, and you tell the other person first.
 - No learner ID in URLs. There's one seeded learner, so every endpoint means "me".
 - Errors use FastAPI's default `{ "detail": ... }`: 404 for unknown IDs, 422 for invalid bodies.
 
-**Param's endpoints**
+**Param's endpoints** (no-levels changes proposed by Neel, Param to confirm)
 
 ```
 GET /api/me
-→ { name, github_login, current_level: { number, name } }
+→ { name, github_login }
 
-GET /api/levels
-→ [{ number, name, ai_policy, unlocks: [str],
-     requirements: { projects, min_gate_score, security_fixes },
-     status: "done" | "current" | "locked" }]
+POST /api/projects
+← { idea, repo_full_name }                   idea: 1–1000 chars, repo: "owner/name"
+→ { id, title, tickets: [{ id, title, why, acceptance_criteria: [str] }] }
+                                             calls Neel's reviewer.generate_tickets(idea)
 
 GET /api/dashboard
 → { skills: [{ area, score }],
-    current_project: { id, title },
-    current_ticket: { id, title, why, acceptance_criteria: [str] },
-    open_gate_id: int | null,
-    progress: { projects: { done, required },
-                security_fixes: { done, required } } }
+    current_project: { id, title } | null,
+    tickets: [{ id, title, why, acceptance_criteria: [str],
+                status: "todo" | "in_review" | "done" }],
+    open_gate_id: int | null }
 
 GET /api/portfolio
 → { learner: { name, github_login },
-    levels_completed: [int],
     projects: [{ title, pr_url, approved_at, concepts: [str] }],
     security_fixes: [{ vuln_class, file, pr_url, explanation }] }
 ```
@@ -169,25 +174,28 @@ POST /webhooks/github                        GitHub only. Verifies the signature
 - **The gate exists before the review finishes.** The webhook creates the Submission and Gate straight away with `status: "reviewing"`, so the link in the bot's comment always works. The gate page polls (TanStack Query `refetchInterval`) until the status is `open`.
 - **`hints` only holds hints already revealed.** Sending all three and hiding them in the UI would let a learner read the snippet in devtools. Each failed answer reveals the next hint.
 - **Answers are submitted in one batch.** Only the failed ones need answering again.
-- **After a pass, the frontend refetches** the `dashboard` and `levels` queries instead of reading progress from the answers response.
-- Neel's gate code calls Param's `progress.record_gate_pass(learner_id, submission_id)` on a pass. It bumps SkillScores from `Ticket.skill_areas` and counts resolved security Findings.
+- **After a pass, the frontend refetches** the `dashboard` query instead of reading progress from the answers response.
+- **A PR names its ticket.** The PR description says `Ticket: #<id>`. If it doesn't, the webhook uses the learner's first ticket that isn't done.
+- **A gate passes** when every question's latest score is at or above one fixed minimum (70).
+- Neel's gate code sets `Gate.status = passed` and `Submission.status = approved`, marks fixed findings `resolved`, then calls Param's `progress.record_gate_pass(learner_id, submission_id)`. That function stamps `passed_at` (so a second call does nothing), bumps SkillScores from `Ticket.skill_areas` and counts resolved security Findings.
 
 ### Data model (v1, proposed by Neel, Param to confirm)
 
-Content (seeded):
+Projects and tickets (from the learner's idea, or the seeded demo calculator):
 
 ```
-Level         id, number (1–4), name, ai_policy, unlocks (JSON list),
-              required_projects, min_gate_score, required_security_fixes
-Project       id, level_id → Level, title, description, repo_full_name
-Ticket        id, project_id → Project, title, why, acceptance_criteria (JSON list),
-              skill_areas (JSON list), label (core | delegable | null)
+Project       id, learner_id → Learner, idea, title, description, repo_full_name
+Ticket        id, project_id → Project, position, title, why,
+              acceptance_criteria (JSON list), skill_areas (JSON list),
+              label (core | delegable | null)
 ```
+
+`Level` is out of the MVP. It comes back with the level map (see Nice to have).
 
 Learner:
 
 ```
-Learner       id, name, github_login (unique), current_level_id → Level
+Learner       id, name, github_login (unique)
 SkillScore    id, learner_id → Learner, area (enum), score 0–100
               unique (learner_id, area)
               area: frontend, backend, database, git, debugging, security, testing
@@ -219,8 +227,8 @@ Why it's shaped this way:
 - **Every attempt is an Answer row**, so "why this grade" covers every attempt, not only the last.
 - **The diff is stored on Submission** so grading doesn't need a GitHub call per answer. It's the learner's own practice-repo code.
 - **Minimal data:** no emails, tokens or passwords.
-- **Computed, not stored:** level status, progress to the next level and the portfolio come from queries.
-- **No promotion logic in the MVP.** The learner stays on Level 1. The requirement columns on `Level` feed the level map and the dashboard progress bar.
+- **Computed, not stored:** ticket status and the portfolio come from queries.
+- **No levels in the MVP.** No `Level` table, no promotion, no "progress to the next level".
 
 ## Who's doing what
 
@@ -228,10 +236,11 @@ Why it's shaped this way:
 | ---- | ----- | ------ |
 | DB schema + API contract | Both | doing |
 | GitHub App, webhook, AI review | Neel | todo |
+| Claude call: project idea → tickets | Neel | todo |
 | Comprehension gate: questions, grading, PR approval | Neel | todo |
 | Demo practice repo + demo PR | Neel | todo |
-| Data model, seed data, learner APIs, progress logic | Param | todo |
-| Level map, dashboard, gate screen, portfolio | Param | todo |
+| Data model, seed data, learner APIs, progress logic | Param | doing |
+| New-project form, dashboard, gate screen, portfolio | Param | todo |
 | Grade transparency + flag a review | Neel (API), Param (UI) | todo |
 | Accessibility pass | Param | todo |
 | Demo video, Devpost, README | Both | todo |
@@ -245,8 +254,8 @@ Each one ends in something we can demo.
 | # | When | Milestone | Demo at the end |
 | - | ---- | --------- | --------------- |
 | M0 | _..._ | Skeleton + contract | The React app shows the seeded learner from FastAPI. A GitHub webhook ping reaches the backend. |
-| M1 | _..._ | Live review + level map | Open a PR on the demo repo and the bot posts a Socratic + security review. The level map and dashboard show seeded data. |
-| M2 | _..._ | Gate loop end to end | Answer the questions in the app, get a hint on a weak answer, pass, and the PR is approved and progress updates. **MVP centrepiece done.** |
+| M1 | _..._ | Live review + tickets | Open a PR on the demo repo and the bot posts a Socratic + security review. Type a project idea and get tickets. The dashboard shows them. |
+| M2 | _..._ | Gate loop end to end | Answer the questions in the app, get a hint on a weak answer, pass, and the PR is approved and the skill map updates. **MVP centrepiece done.** |
 | M3 | _..._ | Full learner journey | Portfolio page, "why this grade" and flag a review. **Feature freeze after this.** |
 | M4 | _..._ | Polish + submit | Accessibility pass, visual polish, demo video, Devpost, public repo. |
 
@@ -256,11 +265,11 @@ Each one ends in something we can demo.
 
 | Criterion | Our answer |
 | --------- | ---------- |
-| Innovation & Creativity | AI access is earned level by level, and understanding is enforced at merge time instead of being an opt-in "learning mode". |
+| Innovation & Creativity | An AI senior reviewer that won't merge your PR until you prove you understand it. Understanding is enforced at merge time instead of being an opt-in "learning mode", and the AI never writes your code. |
 | Impact & Relevance | Teaches what AI can't replace (debugging, security judgment, full-stack breadth). Networks come from matched teams, volunteer pros and nonprofit clients. |
 | Feasibility & Scalability | Runs on real GitHub PRs with a standard stack. SQLModel moves to Postgres without code changes. |
 | Technical Execution | A live end-to-end loop, structured AI output, a stable seeded demo with fallbacks. |
-| UX & Design | A clear level map and dashboard, shadcn/ui polish, accessible from the start. |
+| UX & Design | From idea to tickets in one step, a clear dashboard, shadcn/ui polish, accessible from the start. |
 
 **Sidepots:**
 
@@ -270,11 +279,11 @@ Each one ends in something we can demo.
 **Demo script (draft, 2–5 min):**
 
 1. The problem in 20 seconds: "git push and pray".
-2. The level map: AI is something you earn.
-3. Live: the learner opens a PR on the Level 1 calculator that uses `eval()` on input. The bot replies with a Socratic question and a code-injection finding.
+2. The learner types a project idea and gets tickets that explain the why, never the how.
+3. Live: the learner opens a PR on the calculator that uses `eval()` on input. The bot replies with a Socratic question and a code-injection finding.
 4. The learner fixes it and answers the comprehension questions in the app. One weak answer gets a hint, then they pass.
-5. The bot approves the PR. The dashboard skill map and level progress update, and the portfolio shows the security fix.
-6. The vision: Levels 3–4, nonprofit commissions in Calgary, matched teams.
+5. The bot approves the PR. The ticket shows as done, the dashboard skill map updates, and the portfolio shows the security fix.
+6. The vision: levels where you earn more AI help, nonprofit commissions in Calgary, matched teams.
 
 Record a backup of the live loop in case the venue Wi-Fi fails.
 
@@ -304,7 +313,11 @@ Record decisions here so neither of us re-argues them at 3am.
 | _Proposed:_ Schema and API contract v1 (see Architecture) | Lets us both start building against one shape. Param to confirm | 2026-11-07 |
 | _Proposed:_ Gate created by the webhook in `reviewing` state, frontend polls | The bot's link works immediately, and the frontend gets a clear loading state | 2026-11-07 |
 | _Proposed:_ API only returns hints already revealed | Hidden hints in the payload could be read in devtools | 2026-11-07 |
-| No level promotion in the MVP, only progress toward Level 2 | Levels 2–4 aren't playable. Progress is all the demo needs | 2026-11-07 |
+| ~~No level promotion in the MVP, only progress toward Level 2~~ Replaced by the row below | | 2026-11-07 |
+| Every change, `plans/` included, goes through a PR reviewed by the other person | Keeps `main` working and both of us aware of every change | 2026-11-07 |
+| No levels in the MVP. The learner gives a project idea, Claude makes the tickets, and one fixed rule applies: the AI never writes your code. Levels come back if there's time | Promotion can't be shown in a demo, and the GitHub loop is what has to work. The ladder stays in the pitch as the vision | 2026-11-07 |
+| _Proposed:_ Answer scores are 0–100. A gate passes when every question's latest score is ≥ 70 | One rule for passing, with skill points only on a real pass | 2026-11-07 |
+| _Proposed:_ A PR names its ticket with `Ticket: #<id>` in the description, falling back to the first ticket not done | `Submission.ticket_id` is required, and the webhook needs to know which ticket the PR is for | 2026-11-07 |
 
 ## Open questions
 

@@ -16,6 +16,6 @@
 
 ## Editing
 
-You can commit plan changes straight to `main` without a PR. Always `git pull` first.
+Plan changes go through a branch and a PR like everything else. Never commit them straight to `main`.
 
 Because each personal file has one editor, they never conflict. If you both need to change `project-plan.md` at the same time, say so in chat first.
