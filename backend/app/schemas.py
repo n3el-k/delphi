@@ -5,10 +5,16 @@ so this file is the single source of truth. Neel's gate and flag models go here 
 """
 
 from datetime import datetime
+from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
 
 from app.models import FindingKind, GateStatus, SkillArea, TicketStatus
+
+# Any id a client sends us. SQLite and Postgres ids are 64-bit, so a bigger number would
+# overflow inside the database and come back as a 500. This turns it into a 422 up front.
+MAX_DB_ID = 2**63 - 1
+DbId = Annotated[int, Field(ge=1, le=MAX_DB_ID)]
 
 # --- GET /api/me ---
 
@@ -79,6 +85,8 @@ class FindingOut(BaseModel):
 
 
 class AnswerOut(BaseModel):
+    # The id to send as answer_id when flagging this grade.
+    id: int
     text: str
     score: int
     passed: bool
@@ -109,7 +117,7 @@ class GateOut(BaseModel):
 
 
 class AnswerIn(BaseModel):
-    question_id: int
+    question_id: DbId
     text: str = Field(min_length=1, max_length=2000)
 
 
@@ -120,6 +128,8 @@ class AnswersIn(BaseModel):
 
 class AnswerResult(BaseModel):
     question_id: int
+    # The saved attempt, so a grade can be flagged straight away without refetching the gate.
+    answer_id: int
     score: int
     passed: bool
     explanation: str
@@ -130,6 +140,22 @@ class AnswersOut(BaseModel):
     # true when every question on the latest push has passed: the PR is approved
     passed: bool
     results: list[AnswerResult]
+
+
+# --- POST /api/reviews/{id}/flag (Neel) ---
+
+
+class FlagIn(BaseModel):
+    # Trimmed first, so a reason of only spaces counts as empty.
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+    # Leave both out to flag the whole review. Each must belong to the flagged review's PR.
+    finding_id: DbId | None = None
+    answer_id: DbId | None = None
+
+
+class FlagOut(BaseModel):
+    id: int
+    created_at: datetime
 
 
 # --- GET /api/portfolio ---

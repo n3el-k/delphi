@@ -45,7 +45,7 @@ Next: test the whole app end to end once Param's `POST /api/projects` and screen
 
 ### M3: Transparency + hardening
 
-- [ ] Return the "why" with every grade and finding. Add `POST /api/reviews/{id}/flag`
+- [x] Return the "why" with every grade and finding. Add `POST /api/reviews/{id}/flag` (flags the whole review, one finding or one grade. Stored for a person to look at, it never changes a score or the gate)
 - [x] Timeouts and retries on Claude and GitHub calls. Handle `stop_reason == "refusal"`. `_parse` has the timeouts, one SDK retry and the refusal check, and every GitHub call has a 10s timeout
 - [x] Cached fallback tickets for the calculator: `generate_tickets` returns them with `is_fallback=True` when Claude fails, with a 20s timeout and one SDK retry (~40s worst case). It never raises: cut-off JSON and unexpected errors fall back too, and a bad key is logged as an error. The expression ticket comes first, matching the demo PR
 - [ ] ~~Cached review and questions for the demo PR~~ Dropped for now: test the whole app first, and only add it if Claude turns out to be unreliable (see Decisions)
