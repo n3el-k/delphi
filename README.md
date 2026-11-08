@@ -4,6 +4,8 @@
 
 Built at Hack the Change 2026 (Calgary), Prompt 2: developing in-demand skills in a changing job market.
 
+**Watch the pitch:** [Delphi on YouTube](https://youtu.be/YiKDJ3Ivrbg)
+
 ## Team
 
 - Neel Kochhar ([@n3el-k](https://github.com/n3el-k))
@@ -24,10 +26,10 @@ Understanding is enforced at merge time, so it doesn't depend on which tools som
 
 ## Built for trust
 
-- **Accessibility:** semantic HTML, labelled inputs, keyboard navigation with a visible focus ring, WCAG AA contrast, shadcn/ui (Radix) components.
-- **Transparency:** every AI grade and finding carries its explanation. Hints are revealed one at a time by the server, so they can't be read early in devtools.
-- **Privacy:** no emails, tokens or passwords stored. The diff is the learner's own practice-repo code.
-- **Security:** every endpoint validates a Pydantic model, every webhook's `X-Hub-Signature-256` is verified, secrets live only in `.env`.
+- **Accessible:** you can use the whole app with just a keyboard or a screen reader. Every input has a label, and text is easy to read against its background.
+- **Transparent:** every grade comes with the reason behind it, and you can flag any review you disagree with.
+- **Private:** we only keep what the app needs: your name, your GitHub username, the code in your pull request and your answers. No emails or passwords.
+- **Secure:** secret keys never go in the code, and the app checks that every message from GitHub really came from GitHub.
 
 ## Tech stack
 
@@ -39,6 +41,8 @@ Understanding is enforced at merge time, so it doesn't depend on which tools som
 ## Where it goes next
 
 Levels: beginners start with no AI code generation and earn more AI help as they prove understanding. Calgary nonprofits post real work as tickets, and higher-level learners take them on. The nonprofit board in the app is a preview with made-up organisations and sample data.
+
+Calgary Non-profit startup job board: Here, local nonprofits post real work as tickets. Learners who've passed reviews on their own projects take them on, and Delphi's reviewer checks every pull request before it ships. Nonprofits get software they couldn't afford, and learners get real clients for their portfolio.
 
 ## Getting started
 
@@ -96,8 +100,3 @@ npm run gen:api    # after a change to backend/app/schemas.py: regenerate the Ty
 ```
 
 The app talks to `http://localhost:8000` by default. To point it somewhere else, set `VITE_API_URL` in `frontend/.env` (see `frontend/.env.example`).
-
-## How we worked
-
-- Planning lives in [plans/](plans/), starting with [plans/project-plan.md](plans/project-plan.md).
-- The git workflow is in [CONTRIBUTING.md](CONTRIBUTING.md).

@@ -1,4 +1,4 @@
-"""Database tables, exactly as agreed in data model v1 (plans/project-plan.md)."""
+"""Database tables, exactly as agreed in data model v1."""
 
 from datetime import UTC, datetime
 from enum import StrEnum

@@ -4,7 +4,7 @@ There are two of us and not much time, so the rules are short.
 
 ## Branches
 
-- `main` should always run. Never commit or push to it directly, and that includes `plans/`.
+- `main` should always run. Never commit or push to it directly.
 - Make a branch for each piece of work: `feat/<thing>`, `fix/<thing>`, or `chore/<thing>`.
 - Keep branches short-lived. Merge often so we don't drift apart.
 
