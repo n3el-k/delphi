@@ -37,7 +37,7 @@ export default function Layout() {
       <header className="bg-forest text-white">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-8 gap-y-3 px-4 py-3 sm:px-6">
           <Link to="/" className={cn('flex items-center gap-3 rounded-lg', headerFocus)}>
-            <LogoMark className="size-9 [&_rect]:fill-white/10" />
+            <LogoMark className="size-10" />
             <span className="flex flex-col leading-tight">
               <span className="font-heading text-xl font-semibold tracking-tight">Delphi</span>
               <span className="text-xs text-peach">Know thy code</span>

@@ -1,6 +1,6 @@
 import { ArrowRight, ClipboardCheck, ShieldCheck } from 'lucide-react'
 import { Link } from 'react-router'
-import { LogoMark } from '@/components/Logo'
+import { Medallion } from '@/components/Logo'
 import { ErrorState, Loading } from '@/components/states'
 import TicketCard from '@/components/TicketCard'
 import { Button } from '@/components/ui/button'
@@ -110,7 +110,7 @@ function Welcome() {
       aria-labelledby="welcome-heading"
       className="relative overflow-hidden rounded-2xl bg-forest p-8 text-white sm:p-10 lg:col-span-2"
     >
-      <LogoMark className="absolute -right-6 -bottom-6 size-48 opacity-15 [&_rect]:fill-transparent" />
+      <Medallion className="absolute -right-16 -bottom-16 size-72 opacity-15" />
       <p className="text-sm font-medium text-peach">Welcome to Delphi</p>
       <h1 id="welcome-heading" className="mt-2 text-4xl font-semibold sm:text-5xl">
         Know thy code.
