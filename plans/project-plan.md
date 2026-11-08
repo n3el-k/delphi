@@ -132,9 +132,10 @@ GET /api/me
 
 POST /api/projects
 ← { idea, repo_full_name }                   idea: 1–1000 chars, repo: "owner/name"
-→ { id, title, description, tickets: [{ id, title, why, acceptance_criteria: [str] }] }
-                                             description: Claude's one-paragraph summary of the idea (who it's for, core features)
-                                             calls Neel's reviewer.generate_tickets(idea)
+→ { id, title, description, is_fallback, tickets: [{ id, title, why, acceptance_criteria: [str] }] }
+                                             description: Claude's one-paragraph summary of the idea (who it's for, core features), at most 500 chars
+                                             is_fallback: true when Claude was unavailable and these are the cached example tickets
+                                             calls Neel's reviewer.generate_tickets(idea), which never raises
 
 GET /api/dashboard
 → { skills: [{ area, score }],
@@ -187,8 +188,10 @@ POST /webhooks/github                        GitHub only. Verifies the signature
 Projects and tickets (from the learner's idea):
 
 ```
-Project       id, learner_id → Learner, idea, title, description, repo_full_name
-              (description holds Claude's summary of the idea, shown on the dashboard)
+Project       id, learner_id → Learner, idea, title, description, repo_full_name,
+              is_fallback (bool)
+              (description holds Claude's summary of the idea, shown on the dashboard, ≤ 500 chars.
+               is_fallback marks the cached example tickets, so the label survives a reload)
 Ticket        id, project_id → Project, position, title, why,
               acceptance_criteria (JSON list), skill_areas (JSON list),
               label (core | delegable | null)
@@ -322,9 +325,10 @@ Record decisions here so neither of us re-argues them at 3am.
 | No levels in the MVP. The learner gives a project idea, Claude makes the tickets, and one fixed rule applies: the AI never writes your code. Levels come back if there's time | Promotion can't be shown in a demo, and the GitHub loop is what has to work. The ladder stays in the pitch as the vision | 2026-11-07 |
 | Answer scores are 0–100. A gate passes when every question's latest score is ≥ 70 | One rule for passing, with skill points only on a real pass | 2026-11-07 |
 | A PR names its ticket with `Ticket: #<id>` in the description, falling back to the first ticket not done. `generate_tickets` puts the core-feature ticket first, so the fallback lands on it. On stage, read the id off the dashboard and type it into the demo PR | `Submission.ticket_id` is required, and the webhook needs to know which ticket the PR is for. Matching by title is fragile with live Claude output | 2026-11-07 |
-| _Proposed:_ Project idea is one free-text box, no intake form. Claude returns a summary of how it understood the idea plus the tickets, and the dashboard shows the summary | Least friction for the learner and the smallest contract change. Showing the summary makes the AI's reading of the idea transparent and easy to correct | 2026-11-07 |
+| _Proposed:_ Project idea is one free-text box, no intake form. Claude returns a summary of how it understood the idea plus the tickets, and the dashboard shows the summary | Least friction for the learner and the smallest contract change. Showing the summary makes the AI's reading of the idea transparent. If it misread the idea, the learner submits a new one (no editing in the MVP) | 2026-11-07 |
 | No seeded projects. The seed is one learner and a starting skill map. The dashboard's current project is the newest one that isn't done | A seeded project would hide the one created from an idea on stage. The `eval()` finding comes from the demo PR's code, not the ticket | 2026-11-07 |
-| If Claude fails, `generate_tickets` returns cached calculator tickets with `is_fallback: true`. 25s timeout plus one retry first | Retrying alone doesn't help when the Wi-Fi, key or credits are the problem. The flag lets the UI say so honestly | 2026-11-07 |
+| If Claude fails, `generate_tickets` returns cached calculator tickets with `is_fallback: true`, after a 20s timeout and one retry (~40s worst case). It never raises. Param adds `is_fallback` to the `POST /api/projects` response and a `Project` column | Retrying alone doesn't help when the Wi-Fi, key or credits are the problem. The flag lets the UI say so honestly, and the column keeps the label after a reload | 2026-11-07 |
+| The idea summary is at most 500 characters: Claude is asked for 400 and the result is trimmed at a sentence end | The dashboard card needs a predictable size. Trimming beats throwing away good tickets over a long summary | 2026-11-07 |
 
 ## Open questions
 
@@ -333,4 +337,3 @@ Record decisions here so neither of us re-argues them at 3am.
 - Demo hosting: run locally with the smee tunnel, or deploy (backend on Render or Fly, frontend on Vercel) so judges can try it?
 - Claude API key: whose account, and are there hackathon credits?
 - Who records and edits the demo video?
-- Who adds `is_fallback` to the `POST /api/projects` response in `schemas.py`, and does it need a `Project` column so the "example tickets" label survives a reload?
