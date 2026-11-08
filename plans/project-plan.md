@@ -25,7 +25,9 @@ There are no levels in the MVP. One fixed AI rule applies to everyone: the AI tu
 
 - Auth and signup: one seeded learner, no real login.
 - Assessment and notifications.
-- Default demo project: a seeded calculator whose tickets include the `eval()` trap. A free-form idea can't guarantee a security finding on stage, so the demo uses this, and it's also the fallback if ticket generation fails.
+- No seeded projects. The learner starts with an empty dashboard and creates their first project from an idea. On stage we type a calculator idea. The `eval()` finding comes from the demo PR's code, which we write in advance, so it doesn't depend on the live tickets.
+- Fallback tickets: if Claude is slow or down, `generate_tickets` returns cached calculator tickets (the expression ticket first) with `is_fallback: true`, and the UI labels them as example tickets with a "Try again" button.
+- The demo practice repo is created on GitHub in advance and linked through the idea form like any learner's repo. It isn't seeded.
 
 ### Nice to have (only once the must-haves work end to end)
 
@@ -182,7 +184,7 @@ POST /webhooks/github                        GitHub only. Verifies the signature
 
 ### Data model (v1, proposed by Neel, Param to confirm)
 
-Projects and tickets (from the learner's idea, or the seeded demo calculator):
+Projects and tickets (from the learner's idea):
 
 ```
 Project       id, learner_id → Learner, idea, title, description, repo_full_name
@@ -236,11 +238,11 @@ Why it's shaped this way:
 
 | Task | Owner | Status |
 | ---- | ----- | ------ |
-| DB schema + API contract | Both | doing |
-| GitHub App, webhook, AI review | Neel | todo |
-| Claude call: project idea → tickets | Neel | todo |
+| DB schema + API contract | Both | done |
+| GitHub App, webhook, AI review | Neel | doing |
+| Claude call: project idea → tickets | Neel | doing |
 | Comprehension gate: questions, grading, PR approval | Neel | todo |
-| Demo practice repo + demo PR | Neel | todo |
+| Demo practice repo + demo PR | Neel | done |
 | Data model, seed data, learner APIs, progress logic | Param | doing |
 | New-project form, dashboard, gate screen, portfolio | Param | todo |
 | Grade transparency + flag a review | Neel (API), Param (UI) | todo |
@@ -281,7 +283,7 @@ Each one ends in something we can demo.
 **Demo script (draft, 2–5 min):**
 
 1. The problem in 20 seconds: "git push and pray".
-2. The learner types a project idea and gets tickets that explain the why, never the how.
+2. The learner types a calculator idea, links the practice repo, and gets tickets that explain the why, never the how. The expression ticket comes first.
 3. Live: the learner opens a PR on the calculator that uses `eval()` on input. The bot replies with a Socratic question and a code-injection finding.
 4. The learner fixes it and answers the comprehension questions in the app. One weak answer gets a hint, then they pass.
 5. The bot approves the PR. The ticket shows as done, the dashboard skill map updates, and the portfolio shows the security fix.
@@ -309,18 +311,20 @@ Record decisions here so neither of us re-argues them at 3am.
 | Neel owns the GitHub + AI pipeline, Param owns the learner app | The two halves meet at one API contract, so we can build in parallel | 2026-11-07 |
 | FastAPI backend | Team preference | 2026-11-07 |
 | Vite + React + TS + Tailwind + shadcn/ui frontend | Least friction next to a separate backend, accessible components out of the box | 2026-11-07 |
-| _Proposed:_ SQLite via SQLModel | No setup, can move to Postgres later | 2026-11-07 |
-| _Proposed:_ Claude `claude-opus-5-5` with `messages.parse` + Pydantic | Output always matches our schema | 2026-11-07 |
+| SQLite via SQLModel | No setup, can move to Postgres later. Built in PR #2 | 2026-11-07 |
+| Claude `claude-opus-5-5` with `messages.parse` + Pydantic | Output always matches our schema. Built in the reviewer service | 2026-11-07 |
 | _Proposed:_ GitHub App for webhook + reviews | Bot identity, can approve PRs | 2026-11-07 |
-| _Proposed:_ Schema and API contract v1 (see Architecture) | Lets us both start building against one shape. Param to confirm | 2026-11-07 |
+| Schema and API contract v1 (see Architecture) | Lets us both start building against one shape. Param built the learner side against it in PR #2 | 2026-11-07 |
 | _Proposed:_ Gate created by the webhook in `reviewing` state, frontend polls | The bot's link works immediately, and the frontend gets a clear loading state | 2026-11-07 |
 | _Proposed:_ API only returns hints already revealed | Hidden hints in the payload could be read in devtools | 2026-11-07 |
 | ~~No level promotion in the MVP, only progress toward Level 2~~ Replaced by the row below | | 2026-11-07 |
 | Every change, `plans/` included, goes through a PR reviewed by the other person | Keeps `main` working and both of us aware of every change | 2026-11-07 |
 | No levels in the MVP. The learner gives a project idea, Claude makes the tickets, and one fixed rule applies: the AI never writes your code. Levels come back if there's time | Promotion can't be shown in a demo, and the GitHub loop is what has to work. The ladder stays in the pitch as the vision | 2026-11-07 |
-| _Proposed:_ Answer scores are 0–100. A gate passes when every question's latest score is ≥ 70 | One rule for passing, with skill points only on a real pass | 2026-11-07 |
-| _Proposed:_ A PR names its ticket with `Ticket: #<id>` in the description, falling back to the first ticket not done | `Submission.ticket_id` is required, and the webhook needs to know which ticket the PR is for | 2026-11-07 |
+| Answer scores are 0–100. A gate passes when every question's latest score is ≥ 70 | One rule for passing, with skill points only on a real pass | 2026-11-07 |
+| A PR names its ticket with `Ticket: #<id>` in the description, falling back to the first ticket not done. `generate_tickets` puts the core-feature ticket first, so the fallback lands on it. On stage, read the id off the dashboard and type it into the demo PR | `Submission.ticket_id` is required, and the webhook needs to know which ticket the PR is for. Matching by title is fragile with live Claude output | 2026-11-07 |
 | _Proposed:_ Project idea is one free-text box, no intake form. Claude returns a summary of how it understood the idea plus the tickets, and the dashboard shows the summary | Least friction for the learner and the smallest contract change. Showing the summary makes the AI's reading of the idea transparent and easy to correct | 2026-11-07 |
+| No seeded projects. The seed is one learner and a starting skill map. The dashboard's current project is the newest one that isn't done | A seeded project would hide the one created from an idea on stage. The `eval()` finding comes from the demo PR's code, not the ticket | 2026-11-07 |
+| If Claude fails, `generate_tickets` returns cached calculator tickets with `is_fallback: true`. 25s timeout plus one retry first | Retrying alone doesn't help when the Wi-Fi, key or credits are the problem. The flag lets the UI say so honestly | 2026-11-07 |
 
 ## Open questions
 
@@ -329,3 +333,4 @@ Record decisions here so neither of us re-argues them at 3am.
 - Demo hosting: run locally with the smee tunnel, or deploy (backend on Render or Fly, frontend on Vercel) so judges can try it?
 - Claude API key: whose account, and are there hackathon credits?
 - Who records and edits the demo video?
+- Who adds `is_fallback` to the `POST /api/projects` response in `schemas.py`, and does it need a `Project` column so the "example tickets" label survives a reload?
