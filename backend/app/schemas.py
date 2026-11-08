@@ -4,7 +4,10 @@ The frontend generates its TypeScript types from these through /openapi.json,
 so this file is the single source of truth. Neel's gate and flag models go here too.
 """
 
-from pydantic import BaseModel, Field
+from datetime import datetime
+from typing import Annotated
+
+from pydantic import BaseModel, Field, StringConstraints
 
 from app.models import FindingKind, GateStatus, SkillArea
 from app.services.progress import TicketStatus
@@ -121,3 +124,19 @@ class AnswersOut(BaseModel):
     # true when every question on the latest push has passed: the PR is approved
     passed: bool
     results: list[AnswerResult]
+
+
+# --- POST /api/reviews/{id}/flag (Neel) ---
+
+
+class FlagIn(BaseModel):
+    # Trimmed first, so a reason of only spaces counts as empty.
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+    # Leave both out to flag the whole review. Each must belong to the flagged review's PR.
+    finding_id: int | None = None
+    answer_id: int | None = None
+
+
+class FlagOut(BaseModel):
+    id: int
+    created_at: datetime
