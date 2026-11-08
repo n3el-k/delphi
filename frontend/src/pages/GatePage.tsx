@@ -14,6 +14,9 @@ import { post, useApi, type AnswersIn, type AnswersOut, type Finding, type Gate,
 // How often to check for news while the reviewer works or we wait for a fix push.
 const POLL_MS = 4000
 
+// A review normally lands in ~30 seconds. Past this, it has probably failed.
+const SLOW_MS = 90_000
+
 // The hint ladder, in the order hints are revealed.
 const HINT_NAMES = ['Concept', 'Where to look', 'Small example']
 
@@ -35,6 +38,16 @@ export default function GatePage() {
     const timer = setInterval(reload, POLL_MS)
     return () => clearInterval(timer)
   }, [waiting, reload])
+
+  // If the review hasn't landed after SLOW_MS on this page, say so and say how to retry,
+  // instead of promising "about 30 seconds" forever.
+  const reviewing = gate?.status === 'reviewing'
+  const [slow, setSlow] = useState(false)
+  useEffect(() => {
+    if (!reviewing) return
+    const timer = setTimeout(() => setSlow(true), SLOW_MS)
+    return () => clearTimeout(timer)
+  }, [reviewing])
 
   if (!gate) {
     return error ? (
@@ -62,11 +75,22 @@ export default function GatePage() {
         </a>
       </div>
 
-      {gate.status === 'reviewing' && (
+      {gate.status === 'reviewing' && !slow && (
         <Alert role="status">
           <LoaderCircle aria-hidden="true" className="animate-spin" />
           <AlertTitle>The reviewer is reading your code</AlertTitle>
           <AlertDescription>This takes about 30 seconds. The page updates by itself.</AlertDescription>
+        </Alert>
+      )}
+
+      {gate.status === 'reviewing' && slow && (
+        <Alert role="status">
+          <CircleAlert aria-hidden="true" />
+          <AlertTitle>This is taking longer than expected</AlertTitle>
+          <AlertDescription>
+            The review may have failed. To try again, close and reopen the pull request on GitHub,
+            or push a new commit. This page keeps checking and updates by itself.
+          </AlertDescription>
         </Alert>
       )}
 
