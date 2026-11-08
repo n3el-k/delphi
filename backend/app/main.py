@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 
 from app.config import settings
 from app.db import create_db
-from app.routers import gates, learner, webhooks
+from app.routers import gates, learner, portfolio, webhooks
 from app.services.progress import NotSeededError
 
 
@@ -42,3 +42,4 @@ def health() -> dict[str, str]:
 app.include_router(learner.router)
 app.include_router(webhooks.router)
 app.include_router(gates.router)
+app.include_router(portfolio.router)

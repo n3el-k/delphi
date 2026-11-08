@@ -59,12 +59,17 @@ def current_learner(session: Session) -> Learner:
 
 
 def gate_score(session: Session, gate_id: int) -> int | None:
-    """The lowest of the latest scores across the gate's questions. None if a question is unanswered.
+    """The lowest latest-answer score on the gate's latest push. None if a question is unanswered.
 
-    The lowest, not the average, to match the pass rule: every question needs MIN_GATE_SCORE.
-    An average would let 90 and 55 (72.5) count even though one question was failed.
+    Only the latest push counts: each push gets its own questions (`Question.review_id`), and
+    the learner answers the ones about the code they're actually merging. The minimum, not the
+    average, because the pass rule is "every question at least 70": one strong answer mustn't
+    carry a weak one. Questions saved without a review_id (older data) all count together.
     """
-    questions = session.exec(select(Question).where(Question.gate_id == gate_id)).all()
+    questions = list(session.exec(select(Question).where(Question.gate_id == gate_id)).all())
+    latest_push = max((q.review_id for q in questions if q.review_id is not None), default=None)
+    if latest_push is not None:
+        questions = [q for q in questions if q.review_id == latest_push]
     if not questions:
         return None
     latest_scores = []
