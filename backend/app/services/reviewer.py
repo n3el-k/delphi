@@ -35,6 +35,10 @@ TICKETS_TIMEOUT_SECONDS = 20.0
 # A hint snippet longer than this is getting close to "the corrected code".
 MAX_SNIPPET_LINES = 5
 
+# The comprehension gate asks 2-3 questions per push (the brief's number).
+MIN_QUESTIONS = 2
+MAX_QUESTIONS = 3
+
 # The idea summary on the dashboard card. Claude is asked for the target and the
 # result is trimmed to the max, so the card's size is predictable.
 SUMMARY_TARGET_CHARS = 400
@@ -107,12 +111,39 @@ class ReviewFinding(BaseModel):
     hints: HintLadder
 
 
+class ReviewQuestion(BaseModel):
+    text: str = Field(
+        description=(
+            "A question about a specific line or choice in the learner's own diff, answerable in a "
+            "few sentences without running code, e.g. 'What happens if this input is empty?'"
+        )
+    )
+    file: str | None = Field(description="The file the question is about, if it's about one")
+    line: int | None = Field(description="Line number in the new version of the file, if it's about one")
+    finding_index: int | None = Field(
+        description="0-based index into findings if this question is about one of them, else null"
+    )
+
+
 class ReviewResult(BaseModel):
     summary: str = Field(description="2-3 sentences: what the PR does well, then what needs attention")
     findings: list[ReviewFinding]
+    questions: list[ReviewQuestion] = Field(
+        description=f"{MIN_QUESTIONS}-{MAX_QUESTIONS} comprehension questions about the learner's own diff"
+    )
     policy_flags: list[str] = Field(
         description="Ways the PR breaks the AI rule or misses the ticket's scope. Empty if none."
     )
+
+
+class PreviousFinding(BaseModel):
+    """A finding from the review of the PR's previous push, so the next review can see what changed."""
+
+    kind: str
+    vuln_class: str | None
+    file: str
+    line: int | None
+    explanation: str
 
 
 class TicketContext(BaseModel):
@@ -175,6 +206,12 @@ For each finding:
   small example (at most {MAX_SNIPPET_LINES} lines). It must never be a corrected version of their code.
 
 Line numbers refer to the new version of the file, counted from the diff's @@ headers.
+
+questions: {MIN_QUESTIONS}-{MAX_QUESTIONS} comprehension questions that check the learner understands their OWN
+code: what a line does, why they chose an approach, what happens with an edge case. Point each one
+at a file and line where you can. Never ask them to write code, and never put the answer to a
+finding in a question. If a previous review is given and this diff fixes one of its findings,
+at least one question must ask them to explain how their change fixes it.
 
 policy_flags: note anything that breaks the AI rule (e.g. the PR description says the AI wrote it)
 or work clearly outside the ticket. Leave it empty if there's nothing."""
@@ -383,8 +420,12 @@ def _long_snippets(review: ReviewResult) -> list[ReviewFinding]:
     ]
 
 
-def review_diff(diff: str, ticket: TicketContext) -> ReviewResult:
-    """Socratic + security review of a learner's PR diff against its ticket.
+def review_diff(diff: str, ticket: TicketContext, previous: list[PreviousFinding] | None = None) -> ReviewResult:
+    """Socratic + security review of a learner's PR diff against its ticket, plus the
+    comprehension questions for the gate.
+
+    `previous` is the last push's findings, so the review can tell what got fixed and ask
+    the learner to explain the fix.
 
     A snippet over MAX_SNIPPET_LINES gets one retry with a reminder. If it's still
     too long, we fail rather than risk posting corrected code.
@@ -395,6 +436,7 @@ def review_diff(diff: str, ticket: TicketContext) -> ReviewResult:
         "content": (
             f"<ticket>\nTitle: {ticket.title}\nWhy: {ticket.why}\n"
             f"Acceptance criteria:\n{criteria}\n</ticket>\n\n"
+            f"{_previous_block(previous)}"
             f"<diff>\n{diff}\n</diff>"
         ),
     }]
@@ -402,7 +444,7 @@ def review_diff(diff: str, ticket: TicketContext) -> ReviewResult:
     review = _parse(REVIEW_SYSTEM, messages, ReviewResult, effort="high")
     too_long = _long_snippets(review)
     if not too_long:
-        return review
+        return _check_questions(review)
 
     # One retry: show Claude its own answer and say exactly what to shorten.
     files = ", ".join(sorted({f"{f.file}:{f.line}" for f in too_long}))
@@ -420,4 +462,28 @@ def review_diff(diff: str, ticket: TicketContext) -> ReviewResult:
     review = _parse(REVIEW_SYSTEM, messages, ReviewResult, effort="high")
     if _long_snippets(review):
         raise ReviewerError("Hint snippets were still too long after a retry")
-    return review
+    return _check_questions(review)
+
+
+def _previous_block(previous: list[PreviousFinding] | None) -> str:
+    if not previous:
+        return ""
+    lines = [
+        f"- [{f.kind}] {f.vuln_class or 'correctness'} at {f.file}:{f.line}: {f.explanation}"
+        for f in previous
+    ]
+    return "<previous_review>\nFindings on the learner's previous push:\n" + "\n".join(lines) + "\n</previous_review>\n\n"
+
+
+def _check_questions(review: ReviewResult) -> ReviewResult:
+    """At most MAX_QUESTIONS, and finding_index only where it points at a real finding.
+
+    Fewer than MIN_QUESTIONS is still usable, but none means the gate has nothing to ask.
+    """
+    if not review.questions:
+        raise ReviewerError("The review came back with no comprehension questions")
+    questions = review.questions[:MAX_QUESTIONS]
+    for q in questions:
+        if q.finding_index is not None and not 0 <= q.finding_index < len(review.findings):
+            q.finding_index = None
+    return review.model_copy(update={"questions": questions})

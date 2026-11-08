@@ -24,6 +24,7 @@ from app.models import (
     Gate,
     GateStatus,
     Project,
+    Question,
     Review,
     Submission,
     SubmissionStatus,
@@ -222,7 +223,7 @@ def review_submission(engine: Engine, submission_id: int, head_sha: str) -> None
 
         context = reviewer.TicketContext(title=ticket.title, why=ticket.why, acceptance_criteria=ticket.acceptance_criteria)
         try:
-            result = reviewer.review_diff(diff, context)
+            result = reviewer.review_diff(diff, context, previous_findings(session, submission_id))
         except reviewer.ReviewerError as e:
             logger.error("Review failed for submission %s: %s", submission_id, e)
             return
@@ -262,10 +263,23 @@ def review_submission(engine: Engine, submission_id: int, head_sha: str) -> None
             for f in result.findings
         ]
         session.add_all(findings)
+        session.flush()  # gives the findings ids, so questions can point at them
+
+        gate = session.exec(select(Gate).where(Gate.submission_id == submission_id)).one()
+        session.add_all(
+            Question(
+                gate_id=gate.id,  # type: ignore[arg-type]
+                review_id=review.id,
+                finding_id=findings[q.finding_index].id if q.finding_index is not None else None,
+                text=q.text,
+                file=q.file,
+                line=q.line,
+            )
+            for q in result.questions
+        )
 
         submission.diff = diff
         submission.status = SubmissionStatus.awaiting_gate
-        gate = session.exec(select(Gate).where(Gate.submission_id == submission_id)).one()
         gate.status = GateStatus.open
         session.add_all([submission, gate])
         # Saved before posting, so the gate page works even if GitHub is slow to take the comment.
@@ -280,6 +294,20 @@ def review_submission(engine: Engine, submission_id: int, head_sha: str) -> None
             return
         session.add(review)
         session.commit()
+
+
+def previous_findings(session: Session, submission_id: int) -> list[reviewer.PreviousFinding]:
+    """The findings of this PR's latest review, so the next review can see what got fixed."""
+    last = session.exec(
+        select(Review).where(Review.submission_id == submission_id).order_by(col(Review.id).desc())
+    ).first()
+    if last is None:
+        return []
+    rows = session.exec(select(Finding).where(Finding.review_id == last.id).order_by(col(Finding.id))).all()
+    return [
+        reviewer.PreviousFinding(kind=f.kind, vuln_class=f.vuln_class, file=f.file, line=f.line, explanation=f.explanation)
+        for f in rows
+    ]
 
 
 def format_comment(result: reviewer.ReviewResult, findings: list[Finding], gate_id: int) -> str:
@@ -302,9 +330,12 @@ def format_comment(result: reviewer.ReviewResult, findings: list[Finding], gate_
     if result.policy_flags:
         lines += ["**Against the rules for this project:**", *(f"- {flag}" for flag in result.policy_flags), ""]
     gate_url = f"{settings.frontend_origin.rstrip('/')}/gates/{gate_id}"
-    lines += [
-        "---",
-        f"Before this PR can be approved, answer a few questions about your own code: [open your review]({gate_url}).",
-        "More hints unlock there as you go.",
-    ]
+    if any(f.kind == FindingKind.security for f in findings):
+        next_step = (
+            "Fix the security issue above and push again. Then answer a few questions about "
+            f"your own code to get this PR approved: [open your review]({gate_url})."
+        )
+    else:
+        next_step = f"Before this PR can be approved, answer a few questions about your own code: [open your review]({gate_url})."
+    lines += ["---", next_step, "More hints unlock there as you go."]
     return "\n".join(lines)
