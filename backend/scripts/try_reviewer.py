@@ -8,30 +8,19 @@ Run from backend/ (there's no pyproject on main yet, so uv pulls the deps in):
 It makes real API calls, so each run costs a little.
 """
 
+import logging
 import sys
 import time
 from pathlib import Path
 
-from app.services.reviewer import TicketContext, generate_tickets, review_diff
+from app.services.reviewer import FALLBACK_TICKETS, TicketContext, generate_tickets, review_diff
 
 DIFF = Path(__file__).parent.parent / "tests" / "fixtures" / "eval_pr.diff"
 
 CALCULATOR_IDEA = "A command-line calculator that reads an expression like 2 + 3 * 4 and prints the result."
 
-# Ticket 3 of the seeded demo project, the one the demo PR is for.
-TICKET_3 = TicketContext(
-    title="Evaluate a whole expression",
-    why=(
-        "People want to type a whole sum like 2 + 3 * 4 instead of calling one "
-        "operation at a time, and get the answer a maths teacher would give."
-    ),
-    acceptance_criteria=[
-        "evaluate('2 + 3 * 4') returns 14, following the order of operations",
-        "Brackets and decimals work",
-        "Empty or invalid input gives a clear CalculatorError, never a crash",
-        "Dividing by zero gives the same clear error as divide()",
-    ],
-)
+# The expression ticket the demo PR is written against: the fallback's first ticket.
+EXPRESSION_TICKET = TicketContext(**FALLBACK_TICKETS.tickets[0].model_dump(exclude={"skill_areas"}))
 
 
 def timed(label, fn, *args):
@@ -43,11 +32,14 @@ def timed(label, fn, *args):
 
 
 def main():
+    logging.basicConfig(level=logging.WARNING)
     which = sys.argv[1] if len(sys.argv) > 1 else "all"
     if which in ("all", "tickets"):
-        timed("tickets", generate_tickets, CALCULATOR_IDEA)
+        tickets = timed("tickets", generate_tickets, CALCULATOR_IDEA)
+        if tickets.is_fallback:
+            print("\nClaude was unavailable: these are the cached fallback tickets (see the warning above).")
     if which in ("all", "review"):
-        review = timed("review", review_diff, DIFF.read_text(), TICKET_3)
+        review = timed("review", review_diff, DIFF.read_text(), EXPRESSION_TICKET)
         classes = [f.vuln_class or f.kind for f in review.findings]
         print("\nFindings:", classes)
         print("Caught code injection:", any("94" in c or "injection" in c.lower() for c in classes))

@@ -8,6 +8,8 @@ yet, so it can be built and tested before the backend skeleton (PR #2) lands.
 The Anthropic SDK reads ANTHROPIC_API_KEY from the environment by itself.
 """
 
+import logging
+from functools import cache
 from typing import Literal
 
 import anthropic
@@ -20,9 +22,12 @@ MODEL = "claude-opus-5-5"
 # same call, so a false positive on security-flavoured code doesn't stall the demo.
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
 
-# Seconds per request. Claude reviewing a small diff takes well under this; if it
-# doesn't answer in time the caller uses the cached demo output instead.
+# Seconds per attempt. The SDK retries once (timeouts, connection errors, 429 and
+# 5xx), so the worst case is about twice this before the caller's fallback kicks in.
+# Reviewing a small diff takes ~30s, so it gets the longer limit.
 TIMEOUT_SECONDS = 60.0
+# Tickets take ~15s. The learner is watching a spinner, so this one is shorter.
+TICKETS_TIMEOUT_SECONDS = 25.0
 
 # A hint snippet longer than this is getting close to "the corrected code".
 MAX_SNIPPET_LINES = 5
@@ -60,6 +65,14 @@ class TicketSet(BaseModel):
         )
     )
     tickets: list[TicketDraft]
+
+
+class TicketResult(TicketSet):
+    """What generate_tickets returns. Not sent to Claude, so Claude never sets the flag."""
+
+    # True when Claude was unavailable and these are the cached example tickets.
+    # The UI says so and offers "Try again".
+    is_fallback: bool
 
 
 class HintLadder(BaseModel):
@@ -124,7 +137,9 @@ anything you assumed that they didn't state.
 - Never explain HOW: no function names, libraries, algorithms, code or step-by-step instructions.
 - Spread the tickets across the stack where the idea allows (backend, frontend, database, testing,
   security), so the learner widens their skills instead of repeating one kind of task.
-- Order them so each one builds on the last. The first should be achievable in under an hour.
+- Put the ticket for the project's core feature (the thing the idea is mainly about) first.
+  Later tickets extend it, test it, harden it or add around it. Keep each one small enough
+  to finish in a sitting.
 - Where the idea takes user input, include at least one acceptance criterion about bad or
   malicious input, so security is part of "done"."""
 
@@ -156,15 +171,98 @@ policy_flags: note anything that breaks the AI rule (e.g. the PR description say
 or work clearly outside the ticket. Leave it empty if there's nothing."""
 
 
+# --- Fallbacks ------------------------------------------------------------------
+# Known-good output for when Claude is unavailable during judging. The first
+# ticket is the one the demo PR (the eval() trap) is written against.
+
+FALLBACK_TICKETS = TicketSet(
+    project_title="Calculator",
+    description=(
+        "A command-line calculator for anyone who wants to type a whole sum, like "
+        "2 + 3 * 4, and get the answer a maths teacher would give. I assumed it runs "
+        "in the terminal, reads one expression at a time, and should never crash on "
+        "bad input."
+    ),
+    tickets=[
+        TicketDraft(
+            title="Evaluate a whole expression",
+            why=(
+                "People want to type a whole sum like 2 + 3 * 4 instead of calling one "
+                "operation at a time, and get the answer a maths teacher would give."
+            ),
+            acceptance_criteria=[
+                "evaluate('2 + 3 * 4') returns 14, following the order of operations",
+                "Brackets and decimals work",
+                "Empty or invalid input gives a clear CalculatorError, never a crash",
+                "Dividing by zero gives the same clear error as divide()",
+            ],
+            skill_areas=["backend", "security", "debugging"],
+        ),
+        TicketDraft(
+            title="Prove the calculator works with tests",
+            why=(
+                "A calculator people can't trust is worse than none. Tests catch the "
+                "next change that quietly breaks a sum you already got right."
+            ),
+            acceptance_criteria=[
+                "Running the tests checks order of operations, brackets and decimals",
+                "There's a test for each kind of input that should give an error",
+                "Breaking evaluate() on purpose makes at least one test fail",
+            ],
+            skill_areas=["testing", "debugging"],
+        ),
+        TicketDraft(
+            title="Keep a history of past calculations",
+            why=(
+                "People often need an answer they worked out a few minutes ago, even "
+                "after closing the calculator."
+            ),
+            acceptance_criteria=[
+                "Each expression and its result is kept, newest first",
+                "The history is still there after closing and reopening the calculator",
+                "A missing or corrupted history file doesn't crash the calculator",
+                "Loading the history never runs anything stored in it",
+            ],
+            skill_areas=["database", "security"],
+        ),
+        TicketDraft(
+            title="Use the last answer in the next sum",
+            why=(
+                "Long calculations happen in steps. Retyping the previous answer is slow "
+                "and invites typos."
+            ),
+            acceptance_criteria=[
+                "Typing 'ans' in an expression uses the previous result, e.g. 'ans * 2'",
+                "Using 'ans' before any calculation gives a clear error",
+                "An expression that fails leaves the previous 'ans' unchanged",
+            ],
+            skill_areas=["backend", "debugging"],
+        ),
+    ],
+)
+
+
 # --- Calls ----------------------------------------------------------------------
 
-_client = anthropic.Anthropic(timeout=TIMEOUT_SECONDS, max_retries=1)
+logger = logging.getLogger(__name__)
+
+@cache
+def _client() -> anthropic.Anthropic:
+    # Created on first use, not at import, so importing this module (e.g. in tests)
+    # doesn't need an API key.
+    return anthropic.Anthropic(timeout=TIMEOUT_SECONDS, max_retries=1)
 
 
-def _parse(system: str, messages: list[dict], output_format: type[BaseModel], effort: str):
+def _parse(
+    system: str,
+    messages: list[dict],
+    output_format: type[BaseModel],
+    effort: str,
+    timeout: float = TIMEOUT_SECONDS,
+):
     """One structured call with refusal handling. Returns the parsed model."""
     try:
-        response = _client.beta.messages.parse(
+        response = _client().beta.messages.parse(
             model=MODEL,
             max_tokens=16000,
             system=system,
@@ -173,6 +271,7 @@ def _parse(system: str, messages: list[dict], output_format: type[BaseModel], ef
             output_config={"effort": effort},
             betas=[FALLBACK_BETA],
             fallbacks="default",
+            timeout=timeout,
         )
     except anthropic.APITimeoutError as e:
         raise ReviewerError("Claude timed out") from e
@@ -191,17 +290,33 @@ def _parse(system: str, messages: list[dict], output_format: type[BaseModel], ef
     return response.parsed_output
 
 
-def generate_tickets(idea: str) -> TicketSet:
-    """Turn a learner's project idea into 3-5 tickets: the why, never the how."""
+def _tickets_from_claude(idea: str) -> TicketSet:
     result = _parse(
         TICKETS_SYSTEM,
         [{"role": "user", "content": f"My project idea:\n\n{idea}"}],
         TicketSet,
         effort="medium",
+        timeout=TICKETS_TIMEOUT_SECONDS,
     )
     if not 3 <= len(result.tickets) <= 5:
         raise ReviewerError(f"Expected 3-5 tickets, got {len(result.tickets)}")
     return result
+
+
+def generate_tickets(idea: str) -> TicketResult:
+    """Turn a learner's project idea into 3-5 tickets: the why, never the how.
+
+    Never raises for a Claude problem: if Claude is slow, down or declines, it
+    returns the cached calculator tickets with is_fallback=True, so the demo
+    always has a project to work on.
+    """
+    try:
+        result = _tickets_from_claude(idea)
+    except ReviewerError as e:
+        # The message is ours (no key or request content), so it's safe to log.
+        logger.warning("generate_tickets fell back to the cached tickets: %s", e)
+        return TicketResult(**FALLBACK_TICKETS.model_dump(), is_fallback=True)
+    return TicketResult(**result.model_dump(), is_fallback=False)
 
 
 def _long_snippets(review: ReviewResult) -> list[ReviewFinding]:

@@ -44,7 +44,9 @@ M1: `reviewer.py` has `generate_tickets` and `review_diff` working against the d
 
 - [ ] Return the "why" with every grade and finding. Add `POST /api/reviews/{id}/flag`
 - [ ] Timeouts and retries on Claude and GitHub calls. Handle `stop_reason == "refusal"`
-- [ ] Cached fallback tickets for the calculator, and review and questions for the demo PR, in case the API is slow or down during judging
+- [x] Cached fallback tickets for the calculator: `generate_tickets` returns them with `is_fallback=True` when Claude fails, with a 25s timeout and one SDK retry. The expression ticket comes first, matching the demo PR
+- [ ] Cached review and questions for the demo PR, in case the API is slow or down during judging
+- [ ] Agree with Param who adds `is_fallback` to the `POST /api/projects` response in `schemas.py` and, if the label should survive a reload, a column on `Project`
 
 ### M4: Polish + submit
 
@@ -65,7 +67,7 @@ M1: `reviewer.py` has `generate_tickets` and `review_diff` working against the d
 - [ ] Add `anthropic_api_key` to `config.Settings` and pass it to `anthropic.Anthropic(api_key=...)`. Right now the SDK reads it from the environment, which only works with `uv run --env-file .env`
 - [ ] Replace the `SkillAreaName` Literal in `reviewer.py` with `models.SkillArea`
 - [ ] Map `ReviewResult` onto `Review` + `Finding` rows (`hints` = `[concept, where_to_look, snippet]`) and `TicketSet` onto `Project` + `Ticket`
-- [ ] Take `TICKET_3` in `scripts/try_reviewer.py` from the seed instead of hardcoding it, and run the script with plain `uv run python -m scripts.try_reviewer`
+- [ ] Run `scripts/try_reviewer.py` with plain `uv run python -m scripts.try_reviewer` (it now takes the demo ticket from `FALLBACK_TICKETS`, since there's no seeded project any more)
 - [ ] Add the run and test commands to the Commands section of CLAUDE.md
 
 ## Notes
