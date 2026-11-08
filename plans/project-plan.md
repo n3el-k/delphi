@@ -70,7 +70,7 @@ Learner ──► project idea ──► Claude: tickets ──► DB
 | Database | SQLite via SQLModel | No setup, one file, easy to seed and reset. The same models run on Postgres later (scalability story for judges). |
 | AI | Claude API through the Anthropic Python SDK, model `claude-opus-5-5` | Strongest reviewer. `client.messages.parse(..., output_format=<Pydantic model>)` returns output checked against our schema, so no fragile JSON parsing. |
 | GitHub | A GitHub App, called with PyGithub (or plain httpx) | Reviews come from a bot account, which reads well in the demo, and the app can approve PRs. |
-| Frontend | Vite + React + TypeScript, Tailwind, shadcn/ui, React Router, TanStack Query, lucide-react | FastAPI is the backend, so the frontend only needs to be a plain React app with no server layer to fight. shadcn/ui gives polished components built on Radix, so keyboard and screen reader support come mostly for free. Claude Code is very fluent in this stack. |
+| Frontend | Vite + React + TypeScript, Tailwind, shadcn/ui, React Router, lucide-react | FastAPI is the backend, so the frontend only needs to be a plain React app with no server layer to fight. shadcn/ui gives polished components built on Radix, so keyboard and screen reader support come mostly for free. Data fetching is plain `fetch` in one small hook (`useApi`), so there's no caching library to learn. |
 | Webhook in dev | smee.io | GitHub needs a public URL to deliver webhooks to a laptop. |
 
 ### The four Claude calls (Neel)
@@ -175,10 +175,10 @@ POST /webhooks/github                        GitHub only. Verifies the signature
 
 **How it behaves**
 
-- **The gate exists before the review finishes.** The webhook creates the Submission and Gate straight away with `status: "reviewing"`, so the link in the bot's comment always works. The gate page polls (TanStack Query `refetchInterval`) until the status is `open`.
+- **The gate exists before the review finishes.** The webhook creates the Submission and Gate straight away with `status: "reviewing"`, so the link in the bot's comment always works. The gate page re-fetches every 4 seconds while the status is `reviewing`, and while a security finding blocks the gate, so it updates by itself after a fix push.
 - **`hints` only holds hints already revealed.** Sending all three and hiding them in the UI would let a learner read the snippet in devtools. Each failed answer reveals the next hint.
 - **Answers are submitted in one batch.** Only the failed ones need answering again.
-- **After a pass, the frontend refetches** the `dashboard` query instead of reading progress from the answers response.
+- **After a pass, the frontend refetches** the dashboard (it fetches fresh data each time it opens) instead of reading progress from the answers response.
 - **A PR names its ticket.** The PR description says `Ticket: #<id>`. If it doesn't, the webhook uses the learner's first ticket that isn't done.
 - **A gate passes** when every question's latest score is at or above one fixed minimum (70).
 - Neel's gate code sets `Gate.status = passed` and `Submission.status = approved`, marks fixed findings `resolved`, then calls Param's `progress.record_gate_pass(learner_id, submission_id)`. That function stamps `passed_at` (so a second call does nothing), bumps SkillScores from `Ticket.skill_areas` and counts resolved security Findings.
@@ -247,7 +247,7 @@ Why it's shaped this way:
 | Comprehension gate: questions, grading, PR approval | Neel | done |
 | Demo practice repo + demo PR | Neel | done |
 | Data model, seed data, learner APIs, progress logic | Param | doing |
-| New-project form, dashboard, gate screen, portfolio | Param | todo |
+| New-project form, dashboard, gate screen, portfolio | Param (skeleton by Neel) | doing |
 | Grade transparency + flag a review | Neel (API), Param (UI) | doing |
 | Accessibility pass | Param | todo |
 | Demo video, Devpost, README | Both | todo |
@@ -331,6 +331,7 @@ Record decisions here so neither of us re-argues them at 3am.
 | The idea summary is at most 500 characters: Claude is asked for 400 and the result is trimmed at a sentence end | The dashboard card needs a predictable size. Trimming beats throwing away good tickets over a long summary | 2026-11-07 |
 | _Proposed:_ The comprehension questions come from the review call, not a fourth call. Each push gets its own 2–3 questions (`Question.review_id`), and the gate shows the latest push's. A security finding on the latest push blocks the pass until it's fixed, and the next push asks the learner to explain the fix | One Claude call keeps the gate opening at ~30s on stage, and questions can point at findings. The brief says a security issue has to be fixed and explained, not just answered around. Older questions stay as grade history | 2026-11-07 |
 | No cached fallback review for the demo PR for now. Test the whole app end to end first, and add one only if Claude proves unreliable | Tickets already have a fallback. A canned review is extra code for a failure we haven't seen: every live review so far finished in ~30s | 2026-11-07 |
+| No TanStack Query. The frontend fetches with plain `fetch` in one small hook (`useApi` in `frontend/src/lib/api.ts`). shadcn/ui and lucide-react stay | One less library and set of ideas to learn (query keys, cache invalidation) on four pages that don't share data. shadcn/ui stays because the look and the Radix accessibility matter for two judging areas. The cost: no cache, so going back to a page shows a loading state again | 2026-11-07 |
 
 ## Open questions
 

@@ -54,7 +54,7 @@ We're a security and accessibility product, so our own code has to pass the stan
 
 - **Backend:** Python 3.12, FastAPI, SQLModel + SQLite, uv.
 - **Claude:** Anthropic Python SDK, model `claude-opus-5-5`. Get structured output with `client.messages.parse(..., output_format=<Pydantic model>)` and read `response.parsed_output`. Check `stop_reason` for `"refusal"` before using the result.
-- **Frontend:** Vite + React + TypeScript, Tailwind, shadcn/ui, React Router, TanStack Query, lucide-react. It has to look great: consistent spacing, a real type scale, and loading, empty and error states on every page.
+- **Frontend:** Vite + React + TypeScript, Tailwind, shadcn/ui, React Router, lucide-react. No data-fetching library: pages call the API through `useApi` and `post` in `frontend/src/lib/api.ts`, typed from the backend's `/openapi.json`. It has to look great: consistent spacing, a real type scale, and loading, empty and error states on every page.
 
 ## Commands
 
@@ -68,10 +68,26 @@ uv run pytest                             # tests (offline: GitHub and Claude ar
 uv run python -m scripts.try_reviewer     # real Claude calls on the demo diff (costs a little)
 ```
 
+The live demo, from the repo root. It runs git in a clone of `n3el-k/level1-calculator` next to this repo (set `DEMO_DIR` if it's elsewhere):
+
+```bash
+./scripts/demo.sh start 1                 # open a PR with the eval() flaw for ticket #1 (the id on the dashboard)
+./scripts/demo.sh fix                     # push the fix to that PR
+./scripts/demo.sh reset                   # close demo PRs, delete live/run-* branches, reseed the database
+```
+
 GitHub webhooks in dev: run exactly one smee client. Two clients deliver every event twice.
 
 ```bash
 npx -y smee-client --url "$SMEE_URL" --target http://localhost:8000/webhooks/github
 ```
 
-Frontend: not set up yet.
+Frontend, from `frontend/` (the backend must be running):
+
+```bash
+npm install                               # install
+npm run dev                               # app on http://localhost:5173
+npm run gen:api                           # regenerate src/lib/api-types.ts after a schemas.py change
+npm run build                             # typecheck and build
+npm run lint                              # oxlint
+```

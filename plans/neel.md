@@ -10,7 +10,9 @@ The GitHub + AI pipeline: everything that talks to GitHub or Claude. I meet Para
 
 M1 and M2 are merged (#7–#10). The backend runs the whole loop: PR → webhook → Socratic review with findings and questions → answers graded in the app → bot approves the PR → skill map updates. Tested live once end to end on `n3el-k/level1-calculator`.
 
-Next: test the whole app end to end once Param's `POST /api/projects` and screens are in, then `POST /api/reviews/{id}/flag`.
+Frontend skeleton (`feat/frontend-skeleton`): all four pages working against the backend, plain shadcn/ui look. Param takes over layout and polish.
+
+Next: run the whole loop live through the app (idea → tickets → demo PR → gate → pass), then record the backup video.
 
 ## Next
 
@@ -78,3 +80,5 @@ Next: test the whole app end to end once Param's `POST /api/projects` and screen
 - `reviewer.py` uses `client.beta.messages.parse` with `fallbacks="default"` (beta `server-side-fallback-2026-07-01`), so if Opus 5.5's safety classifier declines security-flavoured code, the API retries on another model in the same call.
 - First runs (2026-11-07): tickets take ~15s, the review ~29s, which fits inside the 60s timeout. On the `eval()` PR it found CWE-94 at `calculator.py:32`, the `1/0` crash, other inputs that crash or slip through, and the missing tests. On `demo/evaluate-fix` it found one real issue: `_work_out` recurses once per operator, so a very long sum crashes with `RecursionError`. To keep the fix push clean in the demo, add an input-length cap to `demo/evaluate-fix`.
 - With the cap (2026-11-07): the fix push's review has no `RecursionError` and one correctness finding instead (`1e999` gives `inf`, not a `CalculatorError`). Correctness doesn't block the pass, and the first question asks the learner to explain the `eval()` fix. Review took ~45s.
+- Beginner-level questions (2026-11-07): the fix push's gate asked learners to name AST node types and trace every branch, which was too hard for Level 1. A shared `LEARNER_LEVEL` block in the review and grade prompts now asks one idea per question in plain words, and the grader credits the right idea in everyday words. On the fix diff, Q1 became "why can't `__import__("os")` run any more?": a plain answer scored 92, "It's safer now" 10, "Because I removed eval" 25.
+- Demo script (2026-11-07): `scripts/demo.sh start <ticket>`, `fix` and `reset` replace the hand-typed git steps. Each run gets its own `live/run-N` branch from `feat/evaluate-expression`, and the fix is a fast-forward to `demo/evaluate-fix`, so those two branches never change. For judging in person: run `start` before presenting, so the bot's comment is already up, and do `fix` and the gate live.
