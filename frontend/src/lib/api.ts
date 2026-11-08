@@ -11,6 +11,7 @@ type Schemas = components['schemas']
 export type Me = Schemas['MeOut']
 export type Dashboard = Schemas['DashboardOut']
 export type Ticket = Schemas['TicketOut']
+export type NewTicket = Schemas['TicketBase']
 export type TicketStatus = Schemas['TicketStatus']
 export type ProjectIn = Schemas['ProjectIn']
 export type ProjectOut = Schemas['ProjectOut']
@@ -79,8 +80,9 @@ export function post<T>(path: string, body: unknown): Promise<T> {
 /**
  * Fetch `path` when the page shows, and again whenever `reload()` is called.
  *
- * `loading` is only true before the first answer arrives. A reload keeps showing the old
- * data until the new data lands, so polling doesn't flash a spinner every few seconds.
+ * Pages check `data` first: while it's undefined, show the error if there is one, else a
+ * loading state. A reload keeps the old data until the new data lands, so polling doesn't
+ * flash a spinner every few seconds, and one failed poll doesn't wipe the page.
  */
 export function useApi<T>(path: string) {
   const [data, setData] = useState<T>()
@@ -109,5 +111,5 @@ export function useApi<T>(path: string) {
 
   const reload = useCallback(() => setAttempt((n) => n + 1), [])
 
-  return { data, error, loading: data === undefined && error === undefined, reload }
+  return { data, error, reload }
 }
